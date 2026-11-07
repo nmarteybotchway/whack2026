@@ -10,4 +10,4 @@ enum ScanMode {
 }
 
 /// Compile-time choice of scan mode. Change this and rebuild to switch.
-const scanMode = ScanMode.stream;
+const scanMode = ScanMode.button;
