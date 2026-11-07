@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 
 import '../ai/food_check_demo.dart';
 import '../diet/diet_history_page.dart';
-import '../health_data/blood_pressure_page.dart';
+// Health Connect is paused; keep the implementation for later.
+// import '../health_data/blood_pressure_page.dart';
+import '../health_data/body_measurements_page.dart';
 import '../scan/scan_page.dart';
 import 'settings_page.dart';
 
@@ -66,7 +68,8 @@ class _HomePageState extends State<HomePage> {
           key: ValueKey(widget.user.uid),
           userId: widget.user.uid,
         ),
-        2 => BloodPressurePage(
+        // To restore watch syncing, use BloodPressurePage here.
+        2 => BodyMeasurementsPage(
           key: ValueKey(widget.user.uid),
           userId: widget.user.uid,
         ),
