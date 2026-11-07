@@ -1,7 +1,7 @@
 # Preferences: manual height and weight
 
-The bottom of Settings → Preferences shows a `BodyMeasurementsCard`, matching
-the beliefs and dietary cards. It displays the saved height, weight and BMI;
+Settings → Preferences shows a `BodyMeasurementsCard` below the beliefs,
+dietary and health-condition cards (followed by `HealthDataCard`). It displays the saved height, weight and BMI;
 tapping opens `body_measurements_page.dart` in a bottom sheet. Saving closes the
 editor and updates the summary through Firestore. Beliefs and dietary edits
 save when their Done button is tapped. It loads and saves the
@@ -22,8 +22,11 @@ replaces the current measurements rather than creating a history.
 Deploy `firestore.rules` to enable owner-only access to the new profile document:
 `firebase deploy --only firestore:rules --project whack-2026-c7898`.
 
-The standalone Health tab has been removed. A matching Health tracking card in
-Preferences opens connection, reading and deletion controls. On first Android
+The standalone Health tab has been removed. `HealthTrackingCard`
+(`health_tracking_card.dart`) opens connection, reading and deletion controls
+(`BloodPressurePage`, which links to `HeartRatePage`), but it is currently not
+placed on any page: `SettingsPage` receives the controller but does not render
+the card. On first Android
 launch after sign-in, an optional introduction explains the blood-pressure upload
 and offers Connect and upload or Not now. No system permission prompt or health
 read is made before opting in.
@@ -38,8 +41,22 @@ Android backup/restore may restore native preferences during reinstall.
 Collection is managed by HomePage's controller rather than an individual editor.
 It checks blood pressure every minute while the app is foregrounded, including
 when the editor is closed, and stops on sign-out/disposal. It is not a background
-service or live sensor connection. Existing rules and blood-pressure paths are
-unchanged. Manual height, weight and BMI remain independent.
+service or live sensor connection. Manual height, weight and BMI remain
+independent.
+
+---
+
+# Health data snapshot (`HealthDataCard`)
+
+A separate Settings → Preferences card, `HealthDataCard`, has an opt-in switch.
+Turning it on calls `HealthDataStore.collectAndStore`, which reads the last 30
+days of heart rate, steps, sleep, weight and blood pressure from Health Connect
+and merges the latest values (`heartRateBpm`, today's `steps`, `sleepMinutes`,
+`weightKg`, `systolicMmHg`, `diastolicMmHg`, `updatedAt`) into
+`users/{uid}/healthData/latest`; the card writes `optedIn` separately. This is a
+one-off snapshot with no periodic refresh. The card does not request Health
+Connect permission itself, and a missing permission for any one record type
+fails the whole snapshot. "Delete stored data" deletes the document.
 
 ---
 
@@ -71,14 +88,15 @@ No service-account key or Health Connect API key is required in the app.
 2. Enable Anonymous sign-in in Firebase Authentication (the existing guest flow).
 3. Create the default Cloud Firestore database in the intended region.
 4. Sign in to the Firebase CLI with an account allowed to manage that project,
-   then deploy the included owner-only rules:
+   then deploy the checked-in rules (they cover every app collection, not
+   only health data):
    `firebase deploy --only firestore:rules --project whack-2026-c7898`.
-   Review/merge any existing deployed rules first: the local rules currently
-   grant access only to this feature's collection.
 5. Run on an Android phone (minimum API 28) with Health Connect available; older
    Android versions may require installing/updating the Health Connect app.
-6. Sign in, open Preferences → Health tracking, choose Connect and upload, and grant blood pressure read
-   access. Enable your source app's Health Connect write permission separately.
+6. Launch the app (sign-in is automatic and anonymous), choose Connect and upload
+   in the first-launch introduction, and grant read access. The permission
+   request covers blood pressure, heart rate, steps, sleep and weight. Enable
+   your source app's Health Connect write permission separately.
 
 ## Behaviour and limits
 
