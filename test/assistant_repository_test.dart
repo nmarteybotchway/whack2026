@@ -2,6 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hackathon/assistant/assistant_models.dart';
 import 'package:hackathon/assistant/assistant_repository.dart';
+import 'package:hackathon/diet/diet_window_service.dart';
+import 'package:hackathon/diet/receipt_parser.dart';
 
 void main() {
   group('FirestoreAssistantRepository proposal boundary', () {
@@ -92,6 +94,75 @@ void main() {
       },
     );
   });
+  test('diet records come from the two-week window, paged', () async {
+    final now = DateTime(2026, 11, 7, 12);
+    DietDay day(int daysAgo) {
+      final date = DateTime(now.year, now.month, now.day - daysAgo);
+      return DietDay(
+        id: 'd$daysAgo',
+        date: date,
+        foods: ['food$daysAgo'],
+        nutrition: {'VITC': daysAgo.toDouble()},
+      );
+    }
+
+    final storage = _DietStorage({
+      for (final d in [day(0), day(3), day(13), day(20)]) d.id: d,
+    });
+    final firestore = _NoReadFirestore();
+    final repository = FirestoreAssistantRepository(
+      userId: 'fixed-user',
+      firestore: firestore,
+      diet: DietWindowService('fixed-user', storage: storage, now: () => now),
+    );
+
+    final first = await repository.execute('get_user_records', {
+      'source': 'diet',
+      'limit': 2,
+    });
+    final records = first.data['records'] as List;
+    expect([for (final r in records) (r as Map)['id']], ['d0', 'd3']);
+    expect(first.data['hasMore'], true);
+    expect(firestore.calls, 0);
+    expect(storage.days.containsKey('d20'), isFalse);
+
+    final second = await repository.execute('get_user_records', {
+      'source': 'diet',
+      'limit': 2,
+      'cursor': first.data['nextCursor'],
+    });
+    expect(
+      [for (final r in second.data['records'] as List) (r as Map)['id']],
+      ['d13'],
+    );
+    expect(second.data['hasMore'], false);
+
+    final ranged = await repository.execute('get_user_records', {
+      'source': 'diet',
+      'startDate': '2026-11-01',
+      'endDate': '2026-11-04',
+    });
+    expect(
+      [for (final r in ranged.data['records'] as List) (r as Map)['id']],
+      ['d3'],
+    );
+  });
+}
+
+class _DietStorage implements DietStorage {
+  _DietStorage(this.days);
+
+  final Map<String, DietDay> days;
+
+  @override
+  Future<List<DietDay>> loadAll() async => [...days.values];
+
+  @override
+  Future<void> deleteDays(List<String> dayIds) async =>
+      dayIds.forEach(days.remove);
+
+  @override
+  Future<void> save(List<ReceiptItem> items, DateTime day) async {}
 }
 
 class _NoReadFirestore implements FirebaseFirestore {

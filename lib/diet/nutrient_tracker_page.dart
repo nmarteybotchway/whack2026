@@ -1,14 +1,31 @@
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
+import 'diet_window_service.dart';
 import 'nutrient_insights.dart';
 import 'nutrition_service.dart';
 import 'receipt_store.dart';
 
+/// Longest range the tracker offers: receipt days are only kept for the
+/// [DietWindowService] window.
+final _maxDays = DietWindowService.window.inDays;
+
+/// Receipt days from the sliding window plus foods logged through the
+/// assistant, combined per day.
 Future<NutrientInsights> _loadInsights(String userId, int days) async {
   final now = DateTime.now();
   final start = DateTime(now.year, now.month, now.day - (days - 1));
-  final intake = await ReceiptStore(userId).intakeSince(start);
+  final results = await Future.wait([
+    DietWindowService(userId).recentDays(),
+    ReceiptStore(userId).loggedIntakeSince(start),
+  ]);
+  final receiptDays = results[0] as List<DietDay>;
+  final intake = results[1] as Map<DateTime, Map<String, double>>;
+  for (final day in receiptDays) {
+    if (day.date.isBefore(start)) continue;
+    final into = intake.putIfAbsent(day.date, () => {});
+    day.nutrition.forEach((k, v) => into[k] = (into[k] ?? 0) + v);
+  }
   return NutrientInsights.fromDaily(intake, today: now, days: days);
 }
 
@@ -25,7 +42,7 @@ class NutrientTrackerPage extends StatefulWidget {
 }
 
 class _NutrientTrackerPageState extends State<NutrientTrackerPage> {
-  int _days = 30;
+  int _days = _maxDays;
   late Future<NutrientInsights> _insights = _loadInsights(widget.userId, _days);
 
   void _setDays(int days) {
@@ -57,10 +74,10 @@ class _NutrientTrackerPageState extends State<NutrientTrackerPage> {
             ),
             const SizedBox(height: 12),
             SegmentedButton<int>(
-              segments: const [
-                ButtonSegment(value: 7, label: Text('7 days')),
-                ButtonSegment(value: 30, label: Text('30 days')),
-                ButtonSegment(value: 90, label: Text('90 days')),
+              segments: [
+                const ButtonSegment(value: 3, label: Text('3 days')),
+                const ButtonSegment(value: 7, label: Text('7 days')),
+                ButtonSegment(value: _maxDays, label: Text('$_maxDays days')),
               ],
               selected: {_days},
               onSelectionChanged: (selection) => _setDays(selection.first),
@@ -339,7 +356,7 @@ class _DailyBars extends StatelessWidget {
 }
 
 /// Compact home-screen card listing the nutrients the user is most short of
-/// over the last 30 days; opens [NutrientTrackerPage].
+/// over the last two weeks; opens [NutrientTrackerPage].
 class NutrientGapsCard extends StatefulWidget {
   const NutrientGapsCard({super.key, required this.userId});
 
@@ -350,7 +367,10 @@ class NutrientGapsCard extends StatefulWidget {
 }
 
 class _NutrientGapsCardState extends State<NutrientGapsCard> {
-  late Future<NutrientInsights> _insights = _loadInsights(widget.userId, 30);
+  late Future<NutrientInsights> _insights = _loadInsights(
+    widget.userId,
+    _maxDays,
+  );
 
   Future<void> _open() async {
     await Navigator.of(context).push(
@@ -358,7 +378,8 @@ class _NutrientGapsCardState extends State<NutrientGapsCard> {
         builder: (_) => NutrientTrackerPage(userId: widget.userId),
       ),
     );
-    if (mounted) setState(() => _insights = _loadInsights(widget.userId, 30));
+    if (mounted)
+      setState(() => _insights = _loadInsights(widget.userId, _maxDays));
   }
 
   @override
@@ -408,14 +429,14 @@ class _NutrientGapsCardState extends State<NutrientGapsCard> {
                   final gaps = insights.gaps;
                   if (gaps.isEmpty) {
                     return const Text(
-                      'No gaps in the last 30 days — nice work.',
+                      'No gaps in the last two weeks — nice work.',
                     );
                   }
                   return Column(
                     crossAxisAlignment: .start,
                     children: [
                       Text(
-                        'Last 30 days, you may be lacking:',
+                        'Last two weeks, you may be lacking:',
                         style: theme.textTheme.bodySmall,
                       ),
                       const SizedBox(height: 8),
