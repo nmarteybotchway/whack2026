@@ -1,3 +1,29 @@
+# Current Health tab: manual height and weight
+
+The Health tab now uses `body_measurements_page.dart`. It loads and saves the
+signed-in user's latest `heightCm`, `weightKg`, calculated `bmi`, selected
+`heightUnit` (`cm` or `ft_in`), `weightUnit` (`kg` or `lb`), and server `updatedAt` at:
+
+`users/{uid}/healthProfile/measurements`
+
+Height accepts centimetres or feet and inches; weight accepts kilograms or pounds.
+Stored measurements are normalised to centimetres and kilograms, with BMI calculated
+as weightKg / (heightCm / 100)². BMI is displayed to one decimal place and saved
+without display rounding. Saved values and preferred units prefill the form on
+return; existing records without unit preferences default to cm/kg.
+Both measurements are required;
+validation rejects non-finite, non-positive, and out-of-range values. Saving again
+replaces the current measurements rather than creating a history.
+
+Deploy `firestore.rules` to enable owner-only access to the new profile document:
+`firebase deploy --only firestore:rules --project whack-2026-c7898`.
+
+The BloodPressurePage import/route is commented out in `home_page.dart`; the
+Health Connect implementation is preserved below for later. No Health Connect
+collection starts from the current screen.
+
+---
+
 # Blood pressure collection
 
 Implemented flow:
