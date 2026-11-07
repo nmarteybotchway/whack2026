@@ -76,29 +76,34 @@ class HealthTrackingCard extends StatelessWidget {
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: tracking,
     builder: (context, _) => Card(
-      child: ListTile(
-        leading: const Icon(Icons.monitor_heart_outlined),
-        title: const Text('Health tracking'),
-        subtitle: Text(
-          !tracking.ready
-              ? 'Checking connection…'
-              : tracking.enabled
-              ? 'Blood pressure · Connected'
-              : tracking.status,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: () => showModalBottomSheet<void>(
-          context: context,
-          isScrollControlled: true,
-          useSafeArea: true,
-          showDragHandle: true,
-          builder: (context) => FractionallySizedBox(
-            heightFactor: 0.9,
-            child: BloodPressurePage(tracking: tracking),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.monitor_heart_outlined),
+            title: const Text('Health tracking'),
+            subtitle: Text(
+              !tracking.ready
+                  ? 'Checking connection…'
+                  : tracking.enabled
+                  ? 'Blood pressure · Connected'
+                  : tracking.status,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => showModalBottomSheet<void>(
+              context: context,
+              isScrollControlled: true,
+              useSafeArea: true,
+              showDragHandle: true,
+              builder: (context) => FractionallySizedBox(
+                heightFactor: 0.9,
+                child: BloodPressurePage(tracking: tracking),
+              ),
+            ),
           ),
-        ),
+        ],
       ),
     ),
   );
