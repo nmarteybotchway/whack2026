@@ -7,9 +7,10 @@ import 'preference.dart';
 /// stored as arrays of [HealthCondition.id]s and [Preference.id]s.
 ///
 /// `alternatives` maps a health condition, then a personal preference, to
-/// substitutes suitable for someone with both. [noneKey] stands for no
-/// condition or no preference, so `none.none` holds healthier substitutes for
-/// anyone and exists only when [generalInfo] is not empty:
+/// substitutes suitable for someone with both. [HealthCondition.none] and
+/// [Preference.none] stand for no condition or no preference, so `none.none`
+/// holds healthier substitutes for anyone and exists only when [generalInfo]
+/// is not empty:
 ///
 /// ```json
 /// "alternatives": {
@@ -27,22 +28,20 @@ class Food {
     this.generalInfo = '',
   });
 
-  /// Key in `alternatives` for no health condition or no preference.
-  static const noneKey = 'none';
-
   /// Display name, e.g. `Peanut Butter`; stored as `food`.
   final String name;
 
-  /// Substitutes by health condition, then personal preference; a null key
-  /// is [noneKey]. `alternatives[null]?[null]` is empty unless
-  /// [generalInfo] is set.
-  final Map<HealthCondition?, Map<Preference?, List<String>>> alternatives;
+  /// Substitutes by health condition, then personal preference, using
+  /// [HealthCondition.none] and [Preference.none] for neither. none/none is
+  /// absent unless [generalInfo] is set.
+  final Map<HealthCondition, Map<Preference, List<String>>> alternatives;
 
-  /// Health conditions this food clashes with.
+  /// Health conditions this food clashes with; never [HealthCondition.none].
   final Set<HealthCondition> healthConditions;
 
   /// Religious or dietary preferences this food clashes with, e.g. beef for
-  /// [Preference.hinduism] or [Preference.vegetarian].
+  /// [Preference.hinduism] or [Preference.vegetarian]; never
+  /// [Preference.none].
   final Set<Preference> personalPrefs;
 
   /// Current food-safety news (e.g. an outbreak or recall) naming the affected
@@ -58,7 +57,7 @@ class Food {
   /// Substitutes for a person with [conditions] and [prefs].
   ///
   /// Looks up every pair of their conditions and preferences that this food
-  /// has alternatives for, using [noneKey] on a side where none of theirs
+  /// has alternatives for, using `none` on a side where none of theirs
   /// apply, and ranks substitutes that suit more pairs first. Empty when the
   /// food is fine for them.
   List<String> alternativesFor({
@@ -66,18 +65,14 @@ class Food {
     Set<Preference> prefs = const {},
   }) {
     final matched = conditions.where(alternatives.containsKey);
-    final rows = [
-      for (final c in matched.isEmpty ? const [null] : matched)
-        ?alternatives[c],
-    ];
-    final lists = [
-      for (final row in rows)
-        for (final p in [
-          ...prefs.where(row.containsKey),
-          if (!prefs.any(row.containsKey)) null,
-        ])
-          ?row[p],
-    ];
+    final lists = <List<String>>[];
+    for (final c in matched.isEmpty ? [HealthCondition.none] : matched) {
+      final row = alternatives[c] ?? const {};
+      final prefsMatched = prefs.where(row.containsKey);
+      for (final p in prefsMatched.isEmpty ? [Preference.none] : prefsMatched) {
+        lists.addAll([?row[p]]);
+      }
+    }
 
     final votes = <String, int>{};
     for (final list in lists) {
@@ -103,14 +98,11 @@ class Food {
     alternatives: {
       for (final MapEntry(key: h, value: row)
           in (data['alternatives'] as Map? ?? const {}).entries)
-        if ((_key(h as String, HealthCondition.fromId), row) case (
-          (final c,),
-          Map row,
-        ))
+        if ((HealthCondition.fromId(h as String), row) case (final c?, Map row))
           c: {
             for (final MapEntry(key: p, value: alts) in row.entries)
-              if ((_key(p as String, Preference.fromId), alts) case (
-                (final pref,),
+              if ((Preference.fromId(p as String), alts) case (
+                final pref?,
                 List alts,
               ))
                 pref: List<String>.from(alts),
@@ -118,11 +110,13 @@ class Food {
     },
     healthConditions: {
       for (final id in List<String>.from(data['health_conditions'] ?? const []))
-        ?HealthCondition.fromId(id),
+        if (HealthCondition.fromId(id) case final c?
+            when c != HealthCondition.none)
+          c,
     },
     personalPrefs: {
       for (final id in List<String>.from(data['personal_prefs'] ?? const []))
-        ?Preference.fromId(id),
+        if (Preference.fromId(id) case final p? when p != Preference.none) p,
     },
     localNews: data['local_news'] as String? ?? '',
     generalInfo: data['general_info'] as String? ?? '',
@@ -132,9 +126,8 @@ class Food {
     'food': name,
     'alternatives': {
       for (final MapEntry(key: c, value: row) in alternatives.entries)
-        c?.id ?? noneKey: {
-          for (final MapEntry(key: p, value: alts) in row.entries)
-            p?.id ?? noneKey: alts,
+        c.id: {
+          for (final MapEntry(key: p, value: alts) in row.entries) p.id: alts,
         },
     },
     'health_conditions': [for (final c in healthConditions) c.id],
@@ -142,12 +135,4 @@ class Food {
     'local_news': localNews,
     'general_info': generalInfo,
   };
-
-  /// Parses an `alternatives` key: `(null,)` for [noneKey], `(value,)` for a
-  /// known ID, or null to skip an unknown one.
-  static (T?,)? _key<T>(String key, T? Function(String) fromId) {
-    if (key == noneKey) return (null,);
-    final value = fromId(key);
-    return value == null ? null : (value,);
-  }
 }

@@ -6,13 +6,13 @@ import 'package:hackathon/food/preference.dart';
 const bacon = Food(
   name: 'Bacon',
   alternatives: {
-    null: {
-      null: ['Roast chicken'],
+    HealthCondition.none: {
+      Preference.none: ['Roast chicken'],
       Preference.vegan: ['Smoked tofu', 'Tempeh bacon'],
       Preference.halal: ['Halal turkey rashers'],
     },
     HealthCondition.hypertension: {
-      null: ['Grilled chicken', 'Smoked tofu'],
+      Preference.none: ['Grilled chicken', 'Smoked tofu'],
       Preference.vegan: ['Smoked tofu', 'Lentils'],
       Preference.halal: ['Grilled halal chicken'],
     },
@@ -26,16 +26,29 @@ const apples = Food(
   name: 'Apples',
   alternatives: {
     HealthCondition.ibs: {
-      null: ['Bananas'],
+      Preference.none: ['Bananas'],
     },
   },
   healthConditions: {HealthCondition.ibs},
 );
 
 void main() {
-  test('none never collides with a condition or preference', () {
-    expect(HealthCondition.fromId(Food.noneKey), isNull);
-    expect(Preference.fromId(Food.noneKey), isNull);
+  test('none is stored as "none" and excluded from the real values', () {
+    expect(HealthCondition.fromId('none'), HealthCondition.none);
+    expect(Preference.fromId('none'), Preference.none);
+    expect(HealthCondition.conditions, isNot(contains(HealthCondition.none)));
+    expect(Preference.preferences, isNot(contains(Preference.none)));
+    expect(Preference.fromLabel('None'), isNull);
+  });
+
+  test('none is never a clash', () {
+    final food = Food.fromMap({
+      'food': 'Apples',
+      'health_conditions': ['none', 'ibs'],
+      'personal_prefs': ['none'],
+    });
+    expect(food.healthConditions, {HealthCondition.ibs});
+    expect(food.personalPrefs, isEmpty);
   });
 
   test('toMap and fromMap round-trip', () {
@@ -69,8 +82,8 @@ void main() {
       },
     });
     expect(food.alternatives, {
-      null: {
-        null: ['A'],
+      HealthCondition.none: {
+        Preference.none: ['A'],
       },
     });
   });
