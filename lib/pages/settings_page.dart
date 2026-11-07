@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../food/health_condition.dart';
 import '../health_data/body_measurements_card.dart';
-import '../health_data/health_tracking_card.dart';
+import '../health_data/health_data_card.dart';
 import '../health_data/health_tracking_controller.dart';
 
 /// Common religious beliefs offered as quick-pick options.
@@ -229,7 +229,7 @@ class _SettingsPageState extends State<SettingsPage> {
           userId: widget.user.uid,
         ),
         const SizedBox(height: 8),
-        HealthTrackingCard(tracking: widget.tracking),
+        HealthDataCard(user: widget.user),
         if (_saving) ...[
           const SizedBox(height: 16),
           const LinearProgressIndicator(),
