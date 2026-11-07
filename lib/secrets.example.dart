@@ -4,5 +4,5 @@
 //   cp lib/secrets.example.dart lib/secrets.dart
 // then paste your keys into lib/secrets.dart. Never commit that file.
 
-/// Google Gemini API key, from https://aistudio.google.com/apikey.
-const geminiApiKey = '';
+/// OpenRouter API key, from https://openrouter.ai/keys.
+const openRouterApiKey = '';
