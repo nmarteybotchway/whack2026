@@ -34,18 +34,9 @@ class AnalysisResult {
 
 /// Sends a camera JPEG to the product identification service.
 class CameraAnalysis {
-  CameraAnalysis({
-    ProductIdentificationBackend backend = ProductIdentificationBackend.api,
-    ProductIdentificationProvider? service,
-  }) : _ownsService = service == null,
-       _service = service ?? _createProvider(backend);
-
-  static ProductIdentificationProvider _createProvider(
-    ProductIdentificationBackend backend,
-  ) => switch (backend) {
-    ProductIdentificationBackend.openRouter => ProductIdentificationService(),
-    ProductIdentificationBackend.api => const ApiProductIdentification(),
-  };
+  CameraAnalysis({ProductIdentificationProvider? service})
+    : _ownsService = service == null,
+      _service = service ?? const ApiProductIdentification();
 
   final ProductIdentificationProvider _service;
   final bool _ownsService;

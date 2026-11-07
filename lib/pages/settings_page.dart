@@ -2,8 +2,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import '../scan/product_identification_service.dart';
-
 /// Common religious beliefs offered as quick-pick options.
 const _religionOptions = [
   'Christianity',
@@ -41,8 +39,6 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   List<String> _religions = const [];
   List<String> _dietary = const [];
-  ProductIdentificationBackend _identificationBackend =
-      ProductIdentificationBackend.api;
   bool _loading = true;
   bool _saving = false;
 
@@ -63,9 +59,6 @@ class _SettingsPageState extends State<SettingsPage> {
       setState(() {
         _religions = List<String>.from(data?['religion'] ?? const []);
         _dietary = List<String>.from(data?['dietary'] ?? const []);
-        _identificationBackend = ProductIdentificationBackend.fromStoredValue(
-          data?['identificationProvider'],
-        );
         _loading = false;
       });
     } on FirebaseException catch (e) {
@@ -88,7 +81,6 @@ class _SettingsPageState extends State<SettingsPage> {
           .set({
             'religion': _religions,
             'dietary': _dietary,
-            'identificationProvider': _identificationBackend.name,
             'updatedAt': FieldValue.serverTimestamp(),
           }, SetOptions(merge: true));
       if (!mounted) return;
@@ -136,43 +128,6 @@ class _SettingsPageState extends State<SettingsPage> {
           style: theme.textTheme.bodyMedium,
         ),
         const SizedBox(height: 16),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Product identification',
-                  style: theme.textTheme.titleMedium,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Choose the provider used when scanning products. '
-                  'FoodBase API identifies products against its catalog.',
-                  style: theme.textTheme.bodySmall,
-                ),
-                const SizedBox(height: 12),
-                SegmentedButton<ProductIdentificationBackend>(
-                  segments: const [
-                    ButtonSegment(
-                      value: ProductIdentificationBackend.openRouter,
-                      label: Text('OpenRouter'),
-                    ),
-                    ButtonSegment(
-                      value: ProductIdentificationBackend.api,
-                      label: Text('FoodBase API'),
-                    ),
-                  ],
-                  selected: {_identificationBackend},
-                  onSelectionChanged: (selection) =>
-                      setState(() => _identificationBackend = selection.first),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
         Card(
           child: ListTile(
             leading: const Icon(Icons.church),
