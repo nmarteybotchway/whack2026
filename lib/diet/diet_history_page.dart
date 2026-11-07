@@ -122,6 +122,10 @@ class _DayCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final date = (data['date'] as Timestamp?)?.toDate().toLocal();
     final foods = List<String>.from(data['foods'] ?? const []);
+    final nutrition = <String, double>{
+      for (final entry in (data['nutrition'] as Map? ?? {}).entries)
+        if (entry.value is num) '${entry.key}': (entry.value as num).toDouble(),
+    };
     return Card(
       clipBehavior: Clip.antiAlias,
       child: ExpansionTile(
@@ -139,6 +143,35 @@ class _DayCard extends StatelessWidget {
               ),
             ),
           ),
+          if (nutrition.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              child: Align(
+                alignment: .centerLeft,
+                child: Text(
+                  'Nutrients hit',
+                  style: Theme.of(context).textTheme.labelMedium,
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Align(
+                alignment: .centerLeft,
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final entry in nutrition.entries)
+                      _NutrientBox(
+                        shorthand: entry.key,
+                        value: entry.value,
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
           Align(
             alignment: .centerLeft,
             child: TextButton.icon(
@@ -148,6 +181,69 @@ class _DayCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// A small box showing one nutrient's shorthand and aggregated amount.
+class _NutrientBox extends StatelessWidget {
+  const _NutrientBox({required this.shorthand, required this.value});
+
+  final String shorthand;
+  final double value;
+
+  static const _labels = {
+    'CA': ('Calcium', 'MG'),
+    'NA': ('Sodium', 'MG'),
+    'FE': ('Iron', 'MG'),
+    'K': ('Potassium', 'MG'),
+    'MG': ('Magnesium', 'MG'),
+    'ZN': ('Zinc', 'MG'),
+    'VITA': ('Vitamin A', 'UG'),
+    'VITB6': ('Vitamin B6', 'MG'),
+    'VITB12': ('Vitamin B12', 'UG'),
+    'VITC': ('Vitamin C', 'MG'),
+    'VITD': ('Vitamin D', 'UG'),
+    'VITE': ('Vitamin E', 'MG'),
+    'VITK': ('Vitamin K', 'UG'),
+    'FOL': ('Folate', 'UG'),
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final (label, unit) = _labels[shorthand] ?? (shorthand, '');
+    final amount = value >= 100
+        ? value.toStringAsFixed(0)
+        : value.toStringAsFixed(value >= 10 ? 1 : 2);
+    return Tooltip(
+      message: label,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: colors.secondaryContainer,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Column(
+          mainAxisSize: .min,
+          children: [
+            Text(
+              shorthand,
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: colors.onSecondaryContainer,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            Text(
+              '$amount${unit == 'UG' ? 'µg' : 'mg'}',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: colors.onSecondaryContainer,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
