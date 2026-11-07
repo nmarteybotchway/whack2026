@@ -389,16 +389,30 @@ class _RecommendationCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 8),
-                Text(
-                  [
-                    if (!r.found) 'Not in the food database',
-                    if (r.hasNews) 'Active food news',
-                    if (r.hasGeneralInfo) 'General health info',
-                    for (final c in r.clashingConditions) c.label,
-                    for (final p in r.clashingPrefs) p.label,
-                  ].join(' · '),
-                  style: theme.textTheme.bodyMedium,
-                ),
+                if ([
+                  if (!r.found) 'Not in the food database',
+                  if (r.hasNews) 'Active food news',
+                  for (final c in r.clashingConditions) c.label,
+                  for (final p in r.clashingPrefs) p.label,
+                ].isNotEmpty)
+                  Text(
+                    [
+                      if (!r.found) 'Not in the food database',
+                      if (r.hasNews) 'Active food news',
+                      for (final c in r.clashingConditions) c.label,
+                      for (final p in r.clashingPrefs) p.label,
+                    ].join(' · '),
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                if (r.hasGeneralInfo ||
+                    r.clashingConditions.isNotEmpty ||
+                    r.clashingPrefs.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    _personalizedRationale(r),
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                ],
                 if (!hideAlternatives && r.alternatives.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Text('Try instead', style: theme.textTheme.titleSmall),
@@ -413,6 +427,52 @@ class _RecommendationCard extends StatelessWidget {
       },
     );
   }
+
+  String _personalizedRationale(FoodRecommendation r) {
+    final info = r.generalInfo?.trim();
+    final conditions = r.clashingConditions.map((c) => c.label).toList();
+    final prefs = r.clashingPrefs.map((p) => p.label.toLowerCase()).toList();
+    final personal = [
+      ...conditions.map(
+        (condition) => condition == 'Pregnancy'
+            ? 'you are pregnant'
+            : 'you have ${_conditionPhrase(condition)}',
+      ),
+      ...prefs.map((preference) => 'you follow a $preference diet'),
+    ];
+    final context = personal.isEmpty
+        ? ''
+        : ' This matters because ${personal.join(' and ')}.';
+    if (info == null || info.isEmpty) {
+      return personal.isEmpty
+          ? ''
+          : 'This is not recommended for you because ${personal.join(' and ')}.';
+    }
+    return 'This is not recommended for you. $info$context';
+  }
+
+  String _conditionPhrase(String label) => switch (label) {
+    'Diabetes' => 'diabetes',
+    'High blood pressure' => 'high blood pressure',
+    'High cholesterol' => 'high cholesterol',
+    'Heart disease' => 'heart disease',
+    'Kidney disease' => 'kidney disease',
+    'Coeliac disease' => 'coeliac disease',
+    'Lactose intolerance' => 'lactose intolerance',
+    'Irritable bowel syndrome' => 'irritable bowel syndrome',
+    'Acid reflux' => 'acid reflux',
+    'Peanut allergy' => 'a peanut allergy',
+    'Tree nut allergy' => 'a tree nut allergy',
+    'Milk allergy' => 'a milk allergy',
+    'Egg allergy' => 'an egg allergy',
+    'Fish allergy' => 'a fish allergy',
+    'Shellfish allergy' => 'a shellfish allergy',
+    'Soy allergy' => 'a soy allergy',
+    'Wheat allergy' => 'a wheat allergy',
+    'Sesame allergy' => 'a sesame allergy',
+    'Pregnancy' => 'pregnant',
+    _ => label.toLowerCase(),
+  };
 }
 
 class _ProductCard extends StatelessWidget {
