@@ -34,7 +34,7 @@ void main() {
       );
     });
 
-    test('defaults to gemini-2.5-flash', () {
+    test('defaults to gemini-3.8-flash', () {
       final service = GeminiService(apiKey: 'test-key');
       expect(service, isNotNull); // model default is fixed in the constructor
     });
@@ -88,7 +88,7 @@ void main() {
       final service = GeminiService(
         apiKey: 'test-key',
         client: GenerativeModel(
-          model: 'gemini-2.5-flash',
+          model: 'gemini-3.8-flash',
           apiKey: 'test-key',
           httpClient: mockClient,
         ),
@@ -112,6 +112,15 @@ void main() {
       expect(body, contains(base64Encode(imageBytes)));
       expect(body, contains('"generationConfig"'));
       expect(body, contains('"responseSchema"'));
+
+      // ignore: avoid_print
+      print('Agent output ({"content": string}): '
+          '${decoded['content']}');
+      // ignore: avoid_print
+      print(
+          'PASS: mock live test — prompt, JPEG image and response schema '
+          'all reached the Gemini transport; response matched '
+          '{"content": string}.');
     });
   });
 
@@ -119,24 +128,45 @@ void main() {
   // optional live smoke test, which only runs when a key is provided:
   //   flutter test --dart-define=GEMINI_API_KEY=<key> --plain-name "live"
   group('live (requires GEMINI_API_KEY dart-define)', () {
-    test('returns text for a simple schema prompt', () async {
+    test('returns schema-shaped text for the nut-allergy prompt and image',
+        () async {
       const apiKey = String.fromEnvironment('GEMINI_API_KEY');
       if (apiKey.isEmpty) {
         markTestSkipped('GEMINI_API_KEY not provided; skipping live smoke test.');
         return;
       }
 
+      final imageBytes = File('assets/test_image.jpg').readAsBytesSync();
+      expect(imageBytes, isNotEmpty);
+
+      const prompt =
+          'given the user is allergic to nuts, is the product in this image '
+          'appropriate';
+      final responseSchema = Schema.object(
+        properties: {
+          'content': Schema.string(
+            description: 'Whether the product is appropriate for the user.',
+          ),
+        },
+      );
+
       final service = GeminiService(apiKey: apiKey);
       final text = await service.generate(
-        prompt: 'Reply with a one-word greeting in the answer field.',
-        responseSchema: Schema.object(
-          properties: {
-            'answer': Schema.string(description: 'The greeting.'),
-          },
-        ),
+        prompt: prompt,
+        responseSchema: responseSchema,
+        image: GeminiImage(imageBytes),
       );
+
+      // ignore: avoid_print
+      print('Agent output ({"content": string}): $text');
+      // ignore: avoid_print
+      print(
+          'PASS: live smoke test — Gemini returned a response matching '
+          '{"content": string}.');
+
       expect(text, isNotEmpty);
-      expect(text, contains('answer'));
+      final decoded = jsonDecode(text) as Map<String, dynamic>;
+      expect(decoded, containsPair('content', isNotEmpty));
     }, timeout: const Timeout(Duration(minutes: 2)));
   });
 }
