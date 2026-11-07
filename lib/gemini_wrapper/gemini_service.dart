@@ -55,7 +55,6 @@ class GeminiService {
   /// variants.
   GeminiService({String apiKey = geminiApiKey, String model = 'gemini-2.5-flash'})
       : _model = GenerativeModel(model: model, apiKey: apiKey);
->>>>>>> ac39a2415b71066f76b6613eb2b25a802b8808ff
 
   /// Sends [prompt] (with an optional JPEG [image]) to Gemini and returns the
   /// model's text response, constrained to [responseSchema].
