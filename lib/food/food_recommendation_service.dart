@@ -12,6 +12,7 @@ class FoodRecommendation {
     required this.found,
     this.hasNews = false,
     this.hasGeneralInfo = false,
+    this.generalInfo,
     this.clashingConditions = const {},
     this.clashingPrefs = const {},
     this.alternatives = const [],
@@ -28,6 +29,9 @@ class FoodRecommendation {
 
   /// The food's [Food.generalInfo] is non-empty.
   final bool hasGeneralInfo;
+
+  /// Stored explanation for why this food may be unhealthy.
+  final String? generalInfo;
 
   /// The user's health conditions this food clashes with.
   final Set<HealthCondition> clashingConditions;
@@ -102,8 +106,8 @@ class FoodRecommendationService {
       },
       conditions: {
         for (final s in List<String>.from(d['health_conditions'] ?? const []))
-          if (HealthCondition.fromId(s)
-              case final c? when c != HealthCondition.none)
+          if (HealthCondition.fromId(s) case final c?
+              when c != HealthCondition.none)
             c,
       },
     );
@@ -136,6 +140,7 @@ class FoodRecommendationService {
       found: true,
       hasNews: hasNews,
       hasGeneralInfo: hasGeneralInfo,
+      generalInfo: food.generalInfo,
       clashingConditions: clashingConditions,
       clashingPrefs: clashingPrefs,
       alternatives: food.alternativesFor(conditions: conditions, prefs: prefs),
@@ -152,6 +157,10 @@ class FoodRecommendationService {
       return FoodRecommendation(food: foodName, found: false);
     }
     final profile = parseProfile(await _userFetcher(uid));
-    return recommend(food, conditions: profile.conditions, prefs: profile.prefs);
+    return recommend(
+      food,
+      conditions: profile.conditions,
+      prefs: profile.prefs,
+    );
   }
 }
