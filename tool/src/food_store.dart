@@ -125,9 +125,12 @@ Future<Map<String, dynamic>> askJson(
   bool webSearch = false,
   Duration timeout = const Duration(minutes: 2),
 }) async {
-  var text = await ai
-      .generate(prompt: prompt, responseSchema: schema, webSearch: webSearch)
-      .timeout(timeout);
+  var text = await ai.generate(
+    prompt: prompt,
+    responseSchema: schema,
+    webSearch: webSearch,
+    timeout: timeout,
+  );
   // Models sometimes ignore the JSON response format and surround the JSON
   // with prose (often containing markdown links), so prefer a ```json fence
   // and otherwise parse from the first bracket to its match.

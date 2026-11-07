@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 
 import 'firebase_options.dart';
 import 'pages/home_page.dart';
-import 'pages/setup_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,9 +24,30 @@ class MyApp extends StatelessWidget {
   }
 }
 
-/// Shows [SetupPage] until a Firebase user is signed in, then [HomePage].
-class AuthGate extends StatelessWidget {
+/// Signs the user in anonymously, without any sign-in UI, and shows [HomePage]
+/// once a Firebase user exists.
+class AuthGate extends StatefulWidget {
   const AuthGate({super.key});
+
+  @override
+  State<AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<AuthGate> {
+  bool _signingIn = false;
+
+  @override
+  void initState() {
+    super.initState();
+    FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (user == null && !_signingIn) {
+        _signingIn = true;
+        FirebaseAuth.instance
+            .signInAnonymously()
+            .whenComplete(() => _signingIn = false);
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -36,8 +56,12 @@ class AuthGate extends StatelessWidget {
       initialData: FirebaseAuth.instance.currentUser,
       builder: (context, snapshot) {
         final user = snapshot.data;
-        if (user == null) return const SetupPage();
-        return HomePage(user: user);
+        if (user == null) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        return HomePage(key: ValueKey(user.uid), user: user);
       },
     );
   }
