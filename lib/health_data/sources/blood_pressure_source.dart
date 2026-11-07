@@ -36,6 +36,74 @@ class BloodPressureSource {
   Future<bool> requestPermission() async =>
       await _channel.invokeMethod<bool>('requestPermission') ?? false;
 
+  /// Reads heart-rate records (Samsung Health syncs these via Health Connect).
+  Future<List<Map<String, dynamic>>> readHeartRate(
+    DateTime start,
+    DateTime end,
+  ) async {
+    final records = await _channel.invokeListMethod<dynamic>(
+      'readHeartRate',
+      {
+        'start': start.millisecondsSinceEpoch,
+        'end': end.millisecondsSinceEpoch,
+      },
+    );
+    return (records ?? [])
+        .map((r) => Map<String, dynamic>.from(r as Map))
+        .toList();
+  }
+
+  /// Reads step-count records for the window.
+  Future<List<Map<String, dynamic>>> readSteps(
+    DateTime start,
+    DateTime end,
+  ) async {
+    final records = await _channel.invokeListMethod<dynamic>(
+      'readSteps',
+      {
+        'start': start.millisecondsSinceEpoch,
+        'end': end.millisecondsSinceEpoch,
+      },
+    );
+    return (records ?? [])
+        .map((r) => Map<String, dynamic>.from(r as Map))
+        .toList();
+  }
+
+  /// Reads sleep-session records for the window.
+  Future<List<Map<String, dynamic>>> readSleep(
+    DateTime start,
+    DateTime end,
+  ) async {
+    final records = await _channel.invokeListMethod<dynamic>(
+      'readSleep',
+      {
+        'start': start.millisecondsSinceEpoch,
+        'end': end.millisecondsSinceEpoch,
+      },
+    );
+    return (records ?? [])
+        .map((r) => Map<String, dynamic>.from(r as Map))
+        .toList();
+  }
+
+  /// Reads weight records for the window.
+  Future<List<Map<String, dynamic>>> readWeight(
+    DateTime start,
+    DateTime end,
+  ) async {
+    final records = await _channel.invokeListMethod<dynamic>(
+      'readWeight',
+      {
+        'start': start.millisecondsSinceEpoch,
+        'end': end.millisecondsSinceEpoch,
+      },
+    );
+    return (records ?? [])
+        .map((r) => Map<String, dynamic>.from(r as Map))
+        .toList();
+  }
+
   Future<List<Map<String, dynamic>>> read(DateTime start, DateTime end) async {
     final records = await _channel.invokeListMethod<dynamic>(
       'readBloodPressure',
