@@ -54,7 +54,8 @@ class FoodComplianceService {
               '"sweets").'
         : 'The ingredient list is: ${ingredients.join(', ')}.';
 
-    final prompt = '''
+    final prompt =
+        '''
 You are a food-compliance checker for a dietary and religious tracking app.
 
 The user's religious preferences are: ${prefs.religions.isEmpty ? 'none' : prefs.religions.join(', ')}.
