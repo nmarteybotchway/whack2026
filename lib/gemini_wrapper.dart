@@ -9,7 +9,7 @@
 /// then:
 ///
 /// ```dart
-/// final service = GeminiService(apiKey: apiKey);
+/// final service = GeminiService(); // key from lib/secrets.dart
 /// final answer = await service.generate(
 ///   prompt: 'Classify this receipt image.',
 ///   responseSchema: Schema.object(properties: {

@@ -2,6 +2,8 @@ import 'dart:typed_data';
 
 import 'package:google_generative_ai/google_generative_ai.dart';
 
+import '../secrets.dart';
+
 /// A JPEG image to attach to a prompt.
 ///
 /// The data contract fixes the image type to JPEG (`image/jpeg`) — the format
@@ -47,11 +49,11 @@ class GeminiService {
 
   /// Creates a service bound to [apiKey].
   ///
+  /// [apiKey] defaults to `geminiApiKey` from the git-ignored
+  /// `lib/secrets.dart` (copy `lib/secrets.example.dart` to create it).
   /// [model] defaults to `gemini-2.5-flash`; override for other Gemini
-  /// variants. The key is typically injected with
-  /// `--dart-define=GEMINI_API_KEY=...` and read via
-  /// `String.fromEnvironment('GEMINI_API_KEY')` — never commit it.
-  GeminiService({required String apiKey, String model = 'gemini-2.5-flash'})
+  /// variants.
+  GeminiService({String apiKey = geminiApiKey, String model = 'gemini-2.5-flash'})
       : _model = GenerativeModel(model: model, apiKey: apiKey);
 
   /// Sends [prompt] (with an optional JPEG [image]) to Gemini and returns the
