@@ -1,11 +1,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
-import 'receipt_parser.dart';
 import 'receipt_scan_page.dart';
 import 'receipt_store.dart';
 
-/// Diet history: scan grocery receipts and review everything stored so far.
+/// Diet history: scan grocery receipts and browse the stored diet, organised
+/// by the day the food was bought.
 class DietHistoryPage extends StatelessWidget {
   const DietHistoryPage({super.key, required this.userId});
 
@@ -23,7 +23,7 @@ class DietHistoryPage extends StatelessWidget {
     );
     if (saved == null || saved == 0 || !context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Saved $saved items from your receipt.')),
+      SnackBar(content: Text('Saved $saved foods to your diet.')),
     );
   }
 
@@ -31,8 +31,10 @@ class DietHistoryPage extends StatelessWidget {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete receipt?'),
-        content: const Text('This deletes the receipt and its items from Firebase.'),
+        title: const Text('Delete this day?'),
+        content: const Text(
+          'This deletes every food stored for that day from Firebase.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -51,7 +53,7 @@ class DietHistoryPage extends StatelessWidget {
     } catch (_) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Could not delete the receipt. Check your connection and retry.'),
+          content: Text('Could not delete. Check your connection and retry.'),
         ));
       }
     }
@@ -67,9 +69,8 @@ class DietHistoryPage extends StatelessWidget {
         Text('Diet history', style: theme.textTheme.headlineSmall),
         const SizedBox(height: 4),
         const Text(
-          'Scan grocery receipts to build a record of what you buy. Items are '
-          'stored with your account so they can be used for diet tracking '
-          'later on.',
+          'Scan grocery receipts to build a record of what you eat. Foods are '
+          'grouped by the day you got them.',
         ),
         const SizedBox(height: 12),
         FilledButton.icon(
@@ -83,7 +84,7 @@ class DietHistoryPage extends StatelessWidget {
           builder: (context, snapshot) {
             if (snapshot.hasError) {
               return const Text(
-                'Cannot load receipts. Check Firebase Authentication, '
+                'Cannot load your diet. Check Firebase Authentication, '
                 'Firestore, and security rules.',
               );
             }
@@ -91,17 +92,14 @@ class DietHistoryPage extends StatelessWidget {
               return const Center(child: CircularProgressIndicator());
             }
             final docs = snapshot.data!.docs;
-            if (docs.isEmpty) return const Text('No receipts scanned yet.');
+            if (docs.isEmpty) return const Text('No foods tracked yet. Scan a receipt to start.');
             return Column(
               crossAxisAlignment: .stretch,
               children: [
-                Text(
-                  snapshot.data!.metadata.isFromCache
-                      ? 'Saved receipts (cached)'
-                      : 'Scanned receipts',
-                ),
+                if (snapshot.data!.metadata.isFromCache)
+                  const Text('Saved diet (cached)'),
                 for (final doc in docs)
-                  _ReceiptCard(
+                  _DayCard(
                     data: doc.data(),
                     onDelete: () => _delete(context, store, doc.id),
                   ),
@@ -114,40 +112,40 @@ class DietHistoryPage extends StatelessWidget {
   }
 }
 
-class _ReceiptCard extends StatelessWidget {
-  const _ReceiptCard({required this.data, required this.onDelete});
+class _DayCard extends StatelessWidget {
+  const _DayCard({required this.data, required this.onDelete});
 
   final Map<String, dynamic> data;
   final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
-    final scannedAt = (data['scannedAt'] as Timestamp?)?.toDate().toLocal();
-    final items = [
-      for (final raw in (data['items'] as List? ?? []))
-        ReceiptItem.fromMap(Map<String, dynamic>.from(raw as Map)),
-    ];
-    final total = (data['total'] as num?)?.toDouble() ??
-        items.fold<double>(0, (acc, item) => acc + item.lineTotal);
+    final date = (data['date'] as Timestamp?)?.toDate().toLocal();
+    final foods = List<String>.from(data['foods'] ?? const []);
     return Card(
       clipBehavior: Clip.antiAlias,
       child: ExpansionTile(
-        title: Text(scannedAt == null ? 'Receipt' : _formatDate(scannedAt)),
-        subtitle: Text('${items.length} items · Total ${total.toStringAsFixed(2)}'),
+        title: Text(date == null ? 'Unknown date' : _formatDay(date)),
+        subtitle: Text('${foods.length} foods'),
         children: [
-          for (final item in items)
-            ListTile(
-              dense: true,
-              title: Text(item.name),
-              subtitle: item.quantity > 1
-                  ? Text('Qty ${item.quantity} × ${item.price.toStringAsFixed(2)}')
-                  : null,
-              trailing: Text(item.lineTotal.toStringAsFixed(2)),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Align(
+              alignment: .centerLeft,
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [for (final food in foods) Chip(label: Text(food))],
+              ),
             ),
-          TextButton.icon(
-            onPressed: onDelete,
-            icon: const Icon(Icons.delete_outline),
-            label: const Text('Delete receipt'),
+          ),
+          Align(
+            alignment: .centerLeft,
+            child: TextButton.icon(
+              onPressed: onDelete,
+              icon: const Icon(Icons.delete_outline),
+              label: const Text('Delete day'),
+            ),
           ),
         ],
       ),
@@ -155,8 +153,7 @@ class _ReceiptCard extends StatelessWidget {
   }
 }
 
-String _formatDate(DateTime date) {
+String _formatDay(DateTime date) {
   String two(int value) => value.toString().padLeft(2, '0');
-  return '${date.year}-${two(date.month)}-${two(date.day)} '
-      '${two(date.hour)}:${two(date.minute)}';
+  return '${date.year}-${two(date.month)}-${two(date.day)}';
 }
