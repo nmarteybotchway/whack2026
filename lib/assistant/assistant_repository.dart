@@ -5,8 +5,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../diet/diet_window_service.dart';
 import '../food/food.dart';
+import '../food/food_recommendation_service.dart';
 import '../food/health_condition.dart';
-import '../food/preference.dart';
 import 'assistant_models.dart';
 
 /// Firestore-backed, UID-scoped data source for assistant tools and actions.
@@ -15,9 +15,11 @@ class FirestoreAssistantRepository implements AssistantDataSource {
     required this.userId,
     FirebaseFirestore? firestore,
     DietWindowService? diet,
+    FoodRecommendationService? recommendations,
     this._profile,
   }) : _db = firestore ?? FirebaseFirestore.instance,
-       _dietService = diet;
+       _dietService = diet,
+       _recommendationService = recommendations;
 
   final String userId;
   final FirebaseFirestore _db;
@@ -32,6 +34,21 @@ class FirestoreAssistantRepository implements AssistantDataSource {
   /// sees (and never resurrects) the last two weeks. Created lazily.
   DietWindowService? _dietService;
   DietWindowService get _diet => _dietService ??= DietWindowService(userId);
+
+  /// The scan flow's recommender, reading foods and the profile through
+  /// [_db] so `get_alternatives` matches what the user sees after a scan.
+  /// Created lazily.
+  FoodRecommendationService? _recommendationService;
+  FoodRecommendationService get _recommendations =>
+      _recommendationService ??= FoodRecommendationService(
+        fetcher: (name) async => (await _getFoodRecord(name)).food,
+        userFetcher: (uid) async =>
+            (await _db.collection('users').doc(uid).get()).data(),
+      );
+
+  /// Raw `food` documents last read by [_getFoodRecord], for the
+  /// `updatedAt` stamps [Food] does not keep.
+  final Map<String, Map<String, dynamic>> _foodDocs = {};
 
   @override
   List<Map<String, Object?>> get tools => _toolDefinitions;
@@ -130,7 +147,14 @@ class FirestoreAssistantRepository implements AssistantDataSource {
       'function': {
         'name': 'get_alternatives',
         'description':
-            'Find stored alternatives and evaluate known user conflicts.',
+            'Check whether the user should avoid a stored food and find '
+            'substitutes, using the same rules as the scan flow: local news, '
+            'general health info, clashes with their health conditions and '
+            'dietary/religious preferences, and nutrients their recent diet '
+            'is already over the limit on (boostsNutrients lists ones they '
+            'are low on that it provides). Substitutes are ranked by user '
+            'match and nutrient gaps; swapDeclined means the user chose to '
+            'keep buying this food, so none are offered.',
         'parameters': {
           'type': 'object',
           'properties': {
@@ -518,73 +542,48 @@ class FirestoreAssistantRepository implements AssistantDataSource {
   }
 
   Future<Map<String, Object?>> _alternatives(String name) async {
-    final baseRecord = await _getFoodRecord(name);
-    final base = baseRecord.food;
-    if (base == null) {
-      return {'found': false, 'alternatives': const []};
-    }
-    final prefs = await _preferences();
-    final conditions = {
-      for (final s in prefs['health_conditions'] as List<String>)
-        ?HealthCondition.fromId(s),
-    };
-    final dietary = <Preference>{
-      for (final s in [
-        ...prefs['religion'] as List<String>,
-        ...prefs['dietary'] as List<String>,
-      ])
-        ?(Preference.fromLabel(s) ?? Preference.fromId(s)),
-    };
-    final ranked = base.alternativesFor(conditions: conditions, prefs: dietary);
-    final output = <Map<String, Object?>>[];
-    for (final candidate in ranked.take(12)) {
-      final candidateRecord = await _getFoodRecord(candidate);
-      final food = candidateRecord.food;
-      final conflicts = <String>[
-        if (food != null)
-          ...food.healthConditions
-              .where((c) => conditions.contains(c))
-              .map((c) => c.label),
-        if (food != null)
-          ...food.personalPrefs
-              .where((p) => dietary.contains(p))
-              .map((p) => p.label),
-      ];
-      final unknown = <String>[
-        ...(prefs['dietary'] ?? const <String>[]).where(
-          (v) =>
-              Preference.fromLabel(v) == null && Preference.fromId(v) == null,
-        ),
-        ...(prefs['religion'] ?? const <String>[]).where(
-          (v) =>
-              Preference.fromLabel(v) == null && Preference.fromId(v) == null,
-        ),
-        ...(prefs['health_conditions'] ?? const <String>[]).where(
-          (v) => HealthCondition.fromId(v) == null,
-        ),
-      ];
-      output.add({
+    final rec = await _recommendations.recommendFor(
+      uid: userId,
+      foodName: name,
+    );
+    if (!rec.found) return {'found': false, 'alternatives': const []};
+    final base = await _recommendations.lookup(name);
+    final UserProfile(:conditions, :prefs) = rec.profile;
+    final alternatives = <Map<String, Object?>>[];
+    for (final candidate in rec.alternatives.take(12)) {
+      final food = await _recommendations.lookup(candidate);
+      alternatives.add({
         'name': candidate,
-        'knownConflicts': conflicts,
-        'unknownConstraints': unknown,
-        'compatibleWithKnownConstraints': food == null || unknown.isNotEmpty
+        'knownConflicts': food == null
             ? null
-            : conflicts.isEmpty,
-        'evidence': food == null
-            ? 'candidate catalog record missing'
-            : 'evaluated stored condition and preference conflict tags',
-        'score': ranked.length - ranked.indexOf(candidate),
+            : [
+                for (final c in food.healthConditions.intersection(conditions))
+                  c.label,
+                for (final p in food.personalPrefs.intersection(prefs)) p.label,
+              ],
         'food': food == null ? null : _foodMap(food),
-        'source': candidateRecord.source,
-        'updatedAt': _jsonSafe(candidateRecord.raw?['updatedAt']),
+        'source': 'food/${Food.idFor(candidate)}',
+        'updatedAt': _jsonSafe(_foodDocs[Food.idFor(candidate)]?['updatedAt']),
       });
     }
     return {
       'found': true,
-      'food': _foodMap(base),
-      'source': baseRecord.source,
-      'updatedAt': _jsonSafe(baseRecord.raw?['updatedAt']),
-      'alternatives': output,
+      'food': base == null ? null : _foodMap(base),
+      'shouldAvoid': rec.shouldAvoid,
+      'canBuy': rec.canBuy,
+      'reasons': [
+        if (rec.hasNews && base != null) 'Local news: ${base.localNews}',
+        if (rec.hasGeneralInfo) rec.generalInfo!.trim(),
+        for (final c in rec.clashingConditions) 'Health condition: ${c.label}',
+        for (final p in rec.clashingPrefs) 'Preference: ${p.label}',
+        for (final n in rec.excessNutrients) 'Diet already high in ${n.label}',
+      ],
+      'excessNutrients': [for (final n in rec.excessNutrients) n.label],
+      'boostsNutrients': [for (final n in rec.boostsNutrients) n.label],
+      'swapDeclined': rec.swapDeclined,
+      'source': 'food/${Food.idFor(name)}',
+      'updatedAt': _jsonSafe(_foodDocs[Food.idFor(name)]?['updatedAt']),
+      'alternatives': alternatives,
     };
   }
 
@@ -845,14 +844,6 @@ class FirestoreAssistantRepository implements AssistantDataSource {
     }
   }
 
-  Future<Map<String, List<String>>> _preferences() async {
-    final data = (await _user.get()).data() ?? {};
-    return {
-      for (final key in ['religion', 'dietary', 'health_conditions'])
-        key: List<String>.from(data[key] ?? const []),
-    };
-  }
-
   String _canonicalPreference(
     String field,
     String value,
@@ -911,12 +902,21 @@ class FirestoreAssistantRepository implements AssistantDataSource {
     'personal_prefs': [for (final p in food.personalPrefs) p.id],
     'local_news': food.localNews,
     'general_info': food.generalInfo,
+    'nutrients': {
+      for (final MapEntry(:key, :value) in food.nutrients.entries)
+        key.id: value,
+    },
   };
 
   Future<({Food? food, Map<String, dynamic>? raw, String source})>
   _getFoodRecord(String name) async {
     final snap = await _db.collection('food').doc(Food.idFor(name)).get();
     final data = snap.data();
+    if (data == null) {
+      _foodDocs.remove(snap.id);
+    } else {
+      _foodDocs[snap.id] = data;
+    }
     return (
       food: data == null ? null : Food.fromMap(data),
       raw: data,

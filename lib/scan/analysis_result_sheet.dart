@@ -315,8 +315,8 @@ class _FoodNewsAlert extends StatelessWidget {
 
 /// Personal buy/avoid verdict for a scanned product, checked against the
 /// signed-in user's preferences and health data: a green "safe to buy" card
-/// when nothing applies, or a red card with the reasons and what to buy
-/// instead.
+/// when nothing applies, a neutral card when the food isn't in the database,
+/// or a red card with the reasons and what to buy instead.
 class _RecommendationCard extends StatelessWidget {
   const _RecommendationCard({
     required this.service,
@@ -364,6 +364,31 @@ class _RecommendationCard extends StatelessWidget {
                       'Safe to buy: no news or general info and it matches '
                       'none of your preferences or health data.'
                       '${_boostText(r)}',
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+        // Not in the food collection: no data to judge by, so stay neutral.
+        if (!r.found) {
+          return Card(
+            color: theme.colorScheme.surfaceContainerHighest,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.help_outline,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'No data for this product yet, so we can’t give a '
+                      'personal recommendation.',
                       style: theme.textTheme.bodyMedium,
                     ),
                   ),
@@ -431,7 +456,6 @@ class _RecommendationCard extends StatelessWidget {
 
   /// Short reason chips for why [r]'s food is not recommended.
   List<String> _reasons(FoodRecommendation r) => [
-    if (!r.found) 'Not in the food database',
     if (r.hasNews) 'Active food news',
     for (final c in r.clashingConditions) c.label,
     for (final p in r.clashingPrefs) p.label,

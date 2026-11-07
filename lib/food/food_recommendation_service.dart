@@ -20,6 +20,8 @@ class FoodRecommendation {
     this.excessNutrients = const {},
     this.boostsNutrients = const {},
     this.alternatives = const [],
+    this.swapDeclined = false,
+    this.profile = const UserProfile(),
   });
 
   /// Display name of the food checked.
@@ -53,8 +55,17 @@ class FoodRecommendation {
   final Set<Nutrient> boostsNutrients;
 
   /// Vote-ranked substitutes ([Food.alternativesFor]); empty when the food
-  /// is fine or no alternative is stored for them.
+  /// is fine, no alternative is stored for them, or [swapDeclined].
   final List<String> alternatives;
+
+  /// The user turned off swap suggestions for this food
+  /// ([UserProfile.declinedSwaps]); the reasons to avoid it are still
+  /// reported, but no [alternatives] are offered.
+  final bool swapDeclined;
+
+  /// The profile the decision was made against, so callers can check
+  /// substitutes for the same conditions and preferences.
+  final UserProfile profile;
 
   /// Any news, general info, preference/health-data match, or nutrient the
   /// user already has too much of.
@@ -77,6 +88,7 @@ class UserProfile {
     this.conditions = const {},
     this.lowNutrients = const {},
     this.highNutrients = const {},
+    this.declinedSwaps = const {},
   });
 
   final Set<Preference> prefs;
@@ -87,6 +99,10 @@ class UserProfile {
 
   /// Nutrients to limit that the user is over ([NutrientStatus.high]).
   final Set<Nutrient> highNutrients;
+
+  /// [FoodRecommendationService.swapKey]s of foods the user chose to keep
+  /// buying, stored as `ignored_swap_items` by the scan result sheet.
+  final Set<String> declinedSwaps;
 }
 
 /// Recommends whether a user can buy a food or should pick an alternative.
@@ -106,6 +122,9 @@ class UserProfile {
 /// foods logged through the assistant, as on the nutrient tracker): a food
 /// high in a nutrient they are already over the limit on is to be avoided, one rich in a nutrient they are low on is flagged as a
 /// boost, and substitutes covering more of their low nutrients rank first.
+///
+/// Foods the user declined swaps for (`ignored_swap_items`) keep their
+/// reasons but get no alternatives ([FoodRecommendation.swapDeclined]).
 class FoodRecommendationService {
   /// [fetcher], [userFetcher] and [insightsFetcher] can be replaced in
   /// tests; the defaults read `food/{Food.idFor(name)}` via
@@ -126,9 +145,15 @@ class FoodRecommendationService {
       (await FirebaseFirestore.instance.collection('users').doc(uid).get())
           .data();
 
+  /// The `ignored_swap_items` key for a food [name]: trimmed, lower-cased,
+  /// with whitespace runs collapsed, as the scan result sheet writes it.
+  static String swapKey(String name) =>
+      name.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+
   /// The user's profile parsed from a `users/{uid}` document, matching how
   /// the settings page stores it: `religion` and `dietary` are label
-  /// strings, `health_conditions` are [HealthCondition.id]s. Unknown
+  /// strings, `health_conditions` are [HealthCondition.id]s, and
+  /// `ignored_swap_items` are [swapKey]s (re-normalized on read). Unknown
   /// entries are skipped, and a missing document yields an empty profile.
   ///
   /// Low and high nutrients come from [insights]; with none, or nothing
@@ -151,7 +176,8 @@ class FoodRecommendationService {
           ...List<String>.from(d['religion'] ?? const []),
           ...List<String>.from(d['dietary'] ?? const []),
         ])
-          if (Preference.fromLabel(s) case final p? when p != Preference.none)
+          if (Preference.fromLabel(s) ?? Preference.fromId(s) case final p?
+              when p != Preference.none)
             p,
       },
       conditions: {
@@ -162,6 +188,10 @@ class FoodRecommendationService {
       },
       lowNutrients: withStatus({NutrientStatus.lacking, NutrientStatus.low}),
       highNutrients: withStatus({NutrientStatus.high}),
+      declinedSwaps: {
+        for (final s in List<String>.from(d['ignored_swap_items'] ?? const []))
+          if (swapKey(s) case final k when k.isNotEmpty) k,
+      },
     );
   }
 
@@ -169,16 +199,25 @@ class FoodRecommendationService {
   /// recent diet low in [lowNutrients] and over the limit on
   /// [highNutrients]. [alternativeFoods], keyed by [Food.idFor], gives the
   /// nutrients of stored substitutes so those covering more of
-  /// [lowNutrients] rank first. Pure — no Firestore — so it is directly
-  /// unit-testable.
+  /// [lowNutrients] rank first. A food whose [swapKey] is in
+  /// [declinedSwaps] is still judged, but offers no alternatives. Pure — no
+  /// Firestore — so it is directly unit-testable.
   static FoodRecommendation recommend(
     Food food, {
     Set<HealthCondition> conditions = const {},
     Set<Preference> prefs = const {},
     Set<Nutrient> lowNutrients = const {},
     Set<Nutrient> highNutrients = const {},
+    Set<String> declinedSwaps = const {},
     Map<String, Food> alternativeFoods = const {},
   }) {
+    final profile = UserProfile(
+      prefs: prefs,
+      conditions: conditions,
+      lowNutrients: lowNutrients,
+      highNutrients: highNutrients,
+      declinedSwaps: declinedSwaps,
+    );
     final clashingConditions = food.healthConditions.intersection(conditions);
     final clashingPrefs = food.personalPrefs.intersection(prefs);
     final excessNutrients = food.highIn.intersection(highNutrients);
@@ -197,8 +236,10 @@ class FoodRecommendationService {
         food: food.name,
         found: true,
         boostsNutrients: boostsNutrients,
+        profile: profile,
       );
     }
+    final swapDeclined = declinedSwaps.contains(swapKey(food.name));
 
     int boosts(String alt) => switch (alternativeFoods[Food.idFor(alt)]) {
       final f? => f.richIn.intersection(lowNutrients).length,
@@ -218,17 +259,21 @@ class FoodRecommendationService {
       clashingPrefs: clashingPrefs,
       excessNutrients: excessNutrients,
       boostsNutrients: boostsNutrients,
-      alternatives: food.alternativesFor(
-        conditions: conditions,
-        prefs: prefs,
-        tieBreak: (a, b) => boosts(b) - boosts(a),
-      ),
+      alternatives: swapDeclined
+          ? const []
+          : food.alternativesFor(
+              conditions: conditions,
+              prefs: prefs,
+              tieBreak: (a, b) => boosts(b) - boosts(a),
+            ),
+      swapDeclined: swapDeclined,
+      profile: profile,
     );
   }
 
-  /// Loads [foodName], [uid]'s profile and recent diet, and decides. When
-  /// the user is low on any nutrient, the substitutes are loaded too so they
-  /// can be ranked by what they provide.
+  /// Loads [foodName], [uid]'s profile (including declined swaps) and recent
+  /// diet, and decides. When the user is low on any nutrient, the
+  /// substitutes are loaded too so they can be ranked by what they provide.
   Future<FoodRecommendation> recommendFor({
     required String uid,
     required String foodName,
@@ -247,6 +292,7 @@ class FoodRecommendationService {
       prefs: profile.prefs,
       lowNutrients: profile.lowNutrients,
       highNutrients: profile.highNutrients,
+      declinedSwaps: profile.declinedSwaps,
       alternativeFoods: alternativeFoods,
     );
 
@@ -259,6 +305,10 @@ class FoodRecommendationService {
     );
     return decide({for (final f in alts.nonNulls) f.id: f});
   }
+
+  /// The stored food named [name], read through the same fetcher as
+  /// [recommendFor], e.g. to inspect a recommended substitute.
+  Future<Food?> lookup(String name) => _fetcher(name);
 
   /// The user's nutrient insights; nutrient checks are best-effort, so a
   /// failed read just leaves them out.
