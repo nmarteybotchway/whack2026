@@ -207,8 +207,30 @@ class _HomeTab extends StatelessWidget {
         Text('Hi, $name', style: theme.textTheme.headlineSmall),
         const SizedBox(height: 4),
         Text('UID: ${user.uid}', style: theme.textTheme.bodySmall),
-        const SizedBox(height: 16),
       ],
+    );
+  }
+}
+
+class _PlaceholderTab extends StatelessWidget {
+  const _PlaceholderTab({required this.tab});
+
+  final _Tab tab;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Center(
+      child: Column(
+        mainAxisSize: .min,
+        children: [
+          Icon(tab.selectedIcon, size: 64, color: theme.colorScheme.primary),
+          const SizedBox(height: 12),
+          Text(tab.label, style: theme.textTheme.headlineSmall),
+          const SizedBox(height: 4),
+          const Text('Coming soon'),
+        ],
+      ),
     );
   }
 }

@@ -15,3 +15,6 @@ const veryfiApiKey = '';
 
 /// FoodBase API key, from the FoodBase dashboard.
 const foodBaseApiKey = '';
+
+/// USDA FoodData Central API key, from https://fdc.nal.usda.gov/api-key-signup/.
+const usdaApiKey = '';
