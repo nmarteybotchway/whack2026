@@ -34,9 +34,35 @@ model cannot select arbitrary user IDs or Firestore paths.
 Personal sources include the root profile, body measurements, latest health
 summary, blood-pressure records, diet/receipt history, manual food entries and
 assistant settings. History tools return bounded pages with continuation cursors.
-Shared tools read the food catalog, alternatives, stored food news, cached
-nutrition and `food_images`. Missing sources and unknown constraints remain
+Shared tools read the food catalog, stored food news, cached nutrition and
+`food_images`; buy/avoid decisions and alternatives come from the same
+recommendation engine as the scan result sheet, so the two always agree
+(see [recommendations.md](recommendations.md) and
+[food-data.md](food-data.md)). Missing sources and unknown constraints remain
 explicit in tool results.
+
+### Tools
+
+Defined in `FirestoreAssistantRepository._toolDefinitions`
+(`lib/assistant/assistant_repository.dart`), plus `get_current_product`, which
+`AssistantController` adds itself. Each repository call times out after 15
+seconds and errors come back as `{"error": <code>, "available": false}`. A
+turn runs at most 6 tool calls (`_maxToolCalls`).
+
+| Tool | Arguments | Returns |
+| --- | --- | --- |
+| `get_user_summary` | – | `profile` (`users/{uid}`), `measurements` (`healthProfile/measurements`), `healthData` (`healthData/latest`), `authProfile`; unavailable sources are marked per key. |
+| `get_preferences` | – | `religion`, `dietary`, `health_conditions` from `users/{uid}`. |
+| `get_user_records` | `source` (`profile`, `measurements`, `healthData`, `assistantSettings`, `bloodPressure`, `diet`, `receipts`, `foodEntries`), `limit` 1–50 (default 20), `cursor`, `startDate`, `endDate` | `{source, records, nextCursor, hasMore}`, newest first. `diet` reads the 14-day `DietWindowService` window; single-document sources reject date filters. |
+| `lookup_food` | `name` | `{found, food: {id, ...food/{id} fields}}`. |
+| `search_foods` | `query` (ID prefix after `Food.idFor`), `limit` 1–30 (default 10), `cursor` | `{foods, hasMore, nextCursor}`. |
+| `get_alternatives` | `name` | Delegates to `FoodRecommendationService.recommendFor`, the same engine as the scan sheet: `{found, food, shouldAvoid, canBuy, reasons, excessNutrients, boostsNutrients, swapDeclined, source, updatedAt, alternatives}`, where each of up to 12 ranked alternatives has `name`, `knownConflicts`, `food`, `source`, `updatedAt`. Unknown foods give `{found: false, alternatives: []}`. See [recommendations.md](recommendations.md). |
+| `get_food_news` | `name` | `{localNews, generalInfo, hasAlerts, source, updatedAt}`; empty fields read "No negative news discovered". |
+| `get_nutrition` | `name` | `{found, record, source}` from `nutritionCache/{trimmed lower-case name}`. |
+| `show_food_images` | `names` (1–8) | Image cards from `food_images` (see below). |
+| `propose_preference_change` | `field` (`religion`, `dietary`, `health_conditions`), `value`, `operation` (`add`, `remove`) | A pending action; nothing is saved until confirmed. |
+| `propose_food_log` | `name`, `localDate`, `kind` (`eaten`, `purchased`), optional `amount` | A pending action for `users/{uid}/foodEntries`. |
+| `get_current_product` | – | The last scanned product (set by `ScanPage` via `setCurrentProduct`), or `{available: false}`. |
 
 `food_images/{Food.idFor(name)}` contains `name`, `url`, `page` and optional
 `updatedAt`. The app resolves the stored URL and renders it with the matching
