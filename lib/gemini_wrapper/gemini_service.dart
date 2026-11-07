@@ -51,8 +51,15 @@ class GeminiService {
   /// variants. The key is typically injected with
   /// `--dart-define=GEMINI_API_KEY=...` and read via
   /// `String.fromEnvironment('GEMINI_API_KEY')` — never commit it.
-  GeminiService({required String apiKey, String model = 'gemini-2.5-flash'})
-      : _model = GenerativeModel(model: model, apiKey: apiKey);
+  ///
+  /// [client] overrides the underlying [GenerativeModel]; used by tests to
+  /// inject a mock HTTP transport instead of calling the real API.
+  GeminiService({
+    required String apiKey,
+    String model = 'gemini-2.5-flash',
+    GenerativeModel? client,
+  }) : _model =
+            client ?? GenerativeModel(model: model, apiKey: apiKey);
 
   /// Sends [prompt] (with an optional JPEG [image]) to Gemini and returns the
   /// model's text response, constrained to [responseSchema].
