@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../food/food_matcher.dart';
@@ -33,7 +34,7 @@ Future<void> showAnalysisResult(
 }
 
 /// Bottom-sheet content describing an [AnalysisResult].
-class AnalysisResultSheet extends StatelessWidget {
+class AnalysisResultSheet extends StatefulWidget {
   const AnalysisResultSheet({
     super.key,
     required this.result,
@@ -51,10 +52,84 @@ class AnalysisResultSheet extends StatelessWidget {
   final String? userId;
 
   @override
+  State<AnalysisResultSheet> createState() => _AnalysisResultSheetState();
+}
+
+class _AnalysisResultSheetState extends State<AnalysisResultSheet> {
+  bool _skipSwap = false;
+  bool _savingOverride = false;
+
+  String _itemKey(String name) =>
+      name.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+
+  String? get _foodName {
+    final result = widget.result;
+    if (result.identification != null) {
+      return _newsFoodName(result.identification!);
+    }
+    return result.item?.name;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadOverride();
+  }
+
+  Future<void> _loadOverride() async {
+    final uid = widget.userId;
+    final foodName = _foodName;
+    if (uid == null || foodName == null) return;
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .get();
+      if (!mounted) return;
+      final ignored = List<String>.from(
+        doc.data()?['ignored_swap_items'] ?? const [],
+      );
+      setState(() => _skipSwap = ignored.contains(_itemKey(foodName)));
+    } on FirebaseException {
+      // Keep swap suggestions visible if saved overrides cannot be loaded.
+    }
+  }
+
+  Future<void> _setSkipSwap(bool value) async {
+    final uid = widget.userId;
+    final foodName = _foodName;
+    if (uid == null || foodName == null || _savingOverride) return;
+    setState(() {
+      _skipSwap = value;
+      _savingOverride = true;
+    });
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(uid).set({
+        'ignored_swap_items': value
+            ? FieldValue.arrayUnion([_itemKey(foodName)])
+            : FieldValue.arrayRemove([_itemKey(foodName)]),
+      }, SetOptions(merge: true));
+    } on FirebaseException catch (e) {
+      if (!mounted) return;
+      setState(() => _skipSwap = !value);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not save swap preference: ${e.message ?? e.code}',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _savingOverride = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final result = widget.result;
     final alternative = result.alternative;
-    final newsService = this.newsService;
+    final newsService = widget.newsService;
     return SafeArea(
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -74,7 +149,9 @@ class AnalysisResultSheet extends StatelessWidget {
               const _ScanError(
                 'No product details were returned. Please try again.',
               ),
-            if (result.identification == null && alternative != null) ...[
+            if (result.identification == null &&
+                alternative != null &&
+                !_skipSwap) ...[
               const SizedBox(height: 16),
               Row(
                 children: [
@@ -86,6 +163,20 @@ class AnalysisResultSheet extends StatelessWidget {
               const SizedBox(height: 8),
               _ItemCard(item: alternative, highlighted: true),
             ],
+            if (widget.userId != null &&
+                _foodName != null &&
+                (alternative != null ||
+                    widget.recommendationService != null ||
+                    _skipSwap))
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _skipSwap,
+                title: const Text('Don’t suggest a swap for this item again'),
+                controlAffinity: ListTileControlAffinity.leading,
+                onChanged: _savingOverride
+                    ? null
+                    : (value) => _setSkipSwap(value ?? false),
+              ),
             if (newsService != null &&
                 result.identification != null &&
                 result.error == null) ...[
@@ -95,15 +186,16 @@ class AnalysisResultSheet extends StatelessWidget {
                 foodName: _newsFoodName(result.identification!),
               ),
             ],
-            if (recommendationService != null &&
-                userId != null &&
+            if (widget.recommendationService != null &&
+                widget.userId != null &&
                 result.identification != null &&
                 result.error == null) ...[
               const SizedBox(height: 16),
               _RecommendationCard(
-                service: recommendationService!,
-                userId: userId!,
+                service: widget.recommendationService!,
+                userId: widget.userId!,
                 foodName: _newsFoodName(result.identification!),
+                hideAlternatives: _skipSwap,
               ),
             ],
             const SizedBox(height: 16),
@@ -230,11 +322,13 @@ class _RecommendationCard extends StatelessWidget {
     required this.service,
     required this.userId,
     required this.foodName,
+    this.hideAlternatives = false,
   });
 
   final FoodRecommendationService service;
   final String userId;
   final String foodName;
+  final bool hideAlternatives;
 
   @override
   Widget build(BuildContext context) {
@@ -305,7 +399,7 @@ class _RecommendationCard extends StatelessWidget {
                   ].join(' · '),
                   style: theme.textTheme.bodyMedium,
                 ),
-                if (r.alternatives.isNotEmpty) ...[
+                if (!hideAlternatives && r.alternatives.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Text('Try instead', style: theme.textTheme.titleSmall),
                   const SizedBox(height: 4),
