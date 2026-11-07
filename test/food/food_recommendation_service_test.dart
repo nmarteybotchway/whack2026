@@ -27,7 +27,9 @@ const bacon = Food(
 const apples = Food(
   name: 'Apples',
   alternatives: {
-    HealthCondition.ibs: {Preference.none: ['Bananas']},
+    HealthCondition.ibs: {
+      Preference.none: ['Bananas'],
+    },
   },
   healthConditions: {HealthCondition.ibs},
 );
@@ -48,6 +50,7 @@ void main() {
       final r = FoodRecommendationService.recommend(bacon);
       expect(r.shouldAvoid, isTrue);
       expect(r.hasGeneralInfo, isTrue);
+      expect(r.generalInfo, bacon.generalInfo);
       expect(r.clashingConditions, isEmpty);
       expect(r.clashingPrefs, isEmpty);
       expect(r.alternatives, ['Roast chicken']); // the ['none']['none'] entry
@@ -67,6 +70,7 @@ void main() {
         conditions: {HealthCondition.hypertension},
       );
       expect(r.clashingConditions, {HealthCondition.hypertension});
+      expect(r.generalInfo, bacon.generalInfo);
       expect(r.clashingPrefs, isEmpty);
       expect(r.alternatives, ['Grilled chicken', 'Smoked tofu']);
     });
