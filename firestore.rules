@@ -65,12 +65,19 @@ service cloud.firestore {
       allow read, delete: if owner(uid);
       allow create, update: if owner(uid)
         && request.resource.data.keys().hasAll(['date', 'foods', 'updatedAt'])
-        && request.resource.data.keys().hasOnly(['date', 'foods', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(
+          ['date', 'foods', 'updatedAt', 'nutrition'])
         && request.resource.data.date is timestamp
         && request.resource.data.updatedAt == request.time
         && request.resource.data.foods is list
         && request.resource.data.foods.size() <= 500
         && request.resource.data.foods[0] is string;
+    }
+    match /nutritionCache/{foodName} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null
+        && request.resource.data.keys().hasAll(['nutrition', 'updatedAt'])
+        && request.resource.data.updatedAt == request.time;
     }
   }
 }
