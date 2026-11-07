@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../appearance/appearance_page.dart';
 import '../assistant/assistant_controller.dart';
 import '../assistant/assistant_settings_page.dart';
 import '../food/health_condition.dart';
@@ -152,6 +153,18 @@ class _SettingsPageState extends State<SettingsPage> {
           style: theme.textTheme.bodyMedium,
         ),
         const SizedBox(height: 16),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.palette_outlined),
+            title: const Text('Appearance'),
+            subtitle: const Text('Light, dark or auto, and theme colour'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const AppearancePage()),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
         if (widget.assistant case final assistant?) ...[
           Card(
             child: ListTile(
