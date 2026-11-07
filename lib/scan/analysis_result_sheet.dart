@@ -1,28 +1,37 @@
 import 'package:flutter/material.dart';
 
+import '../food_news.dart';
 import 'camera_analysis.dart';
 import 'product_identification_service.dart';
 
 /// Shows [result] in a modal bottom sheet over the scan page.
-Future<void> showAnalysisResult(BuildContext context, AnalysisResult result) {
+///
+/// Pass [newsService] to show a food news alert under the product details.
+Future<void> showAnalysisResult(
+  BuildContext context,
+  AnalysisResult result, {
+  FoodNewsService? newsService,
+}) {
   return showModalBottomSheet<void>(
     context: context,
     showDragHandle: true,
     isScrollControlled: true,
-    builder: (_) => AnalysisResultSheet(result: result),
+    builder: (_) => AnalysisResultSheet(result: result, newsService: newsService),
   );
 }
 
 /// Bottom-sheet content describing an [AnalysisResult].
 class AnalysisResultSheet extends StatelessWidget {
-  const AnalysisResultSheet({super.key, required this.result});
+  const AnalysisResultSheet({super.key, required this.result, this.newsService});
 
   final AnalysisResult result;
+  final FoodNewsService? newsService;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final alternative = result.alternative;
+    final newsService = this.newsService;
     return SafeArea(
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -54,6 +63,15 @@ class AnalysisResultSheet extends StatelessWidget {
               const SizedBox(height: 8),
               _ItemCard(item: alternative, highlighted: true),
             ],
+            if (newsService != null &&
+                result.identification != null &&
+                result.error == null) ...[
+              const SizedBox(height: 16),
+              _FoodNewsAlert(
+                service: newsService,
+                foodName: _newsFoodName(result.identification!),
+              ),
+            ],
             const SizedBox(height: 16),
             FilledButton(
               onPressed: () => Navigator.of(context).pop(),
@@ -62,6 +80,99 @@ class AnalysisResultSheet extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// The name the food news service looks up for a scanned product.
+String _newsFoodName(ProductIdentification product) {
+  final productName = product.productName;
+  return (productName != null && productName.isNotEmpty)
+      ? productName
+      : product.displayName;
+}
+
+/// Food news alert for a scanned product: a green no-news card when the
+/// database has nothing, or an alert card with local news (always listed
+/// before general info) when it does.
+class _FoodNewsAlert extends StatelessWidget {
+  const _FoodNewsAlert({required this.service, required this.foodName});
+
+  final FoodNewsService service;
+  final String foodName;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<FoodNewsResult>(
+      future: service.getNews(foodName),
+      builder: (context, snap) {
+        if (!snap.hasData) {
+          return const Padding(
+            padding: EdgeInsets.all(16),
+            child: SizedBox(
+              height: 20,
+              width: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          );
+        }
+        final news = snap.data!;
+        final theme = Theme.of(context);
+        if (!news.hasAlerts) {
+          return Card(
+            color: theme.colorScheme.primaryContainer,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.check_circle_outline,
+                    color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      FoodNewsService.noNewsMessage,
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+        return Card(
+          color: theme.colorScheme.errorContainer,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      color: theme.colorScheme.onErrorContainer,
+                    ),
+                    const SizedBox(width: 8),
+                    Text('Food alert', style: theme.textTheme.titleMedium),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                if (news.localNews != FoodNewsService.noNewsMessage)
+                  Text('Local news: ${news.localNews}',
+                      style: theme.textTheme.bodyMedium),
+                if (news.generalInfo != FoodNewsService.noNewsMessage) ...[
+                  if (news.localNews != FoodNewsService.noNewsMessage)
+                    const SizedBox(height: 4),
+                  Text('General info: ${news.generalInfo}',
+                      style: theme.textTheme.bodyMedium),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
