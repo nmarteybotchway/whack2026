@@ -47,7 +47,7 @@ Future<void> main() async {
 
 import 'food.dart';
 import 'health_condition.dart';
-import 'preference.dart';
+${foods.any((f) => f.value.nutrients.isNotEmpty) ? "import 'nutrient.dart';\n" : ''}import 'preference.dart';
 
 /// Every food stored in Firestore when this file was generated.
 ///
@@ -86,7 +86,8 @@ String _food(Food f) =>
     'healthConditions: {${f.healthConditions.map((c) => 'HealthCondition.${c.name}').join(', ')}}, '
     'personalPrefs: {${f.personalPrefs.map((p) => 'Preference.${p.name}').join(', ')}}, '
     'localNews: ${_string(f.localNews)}, '
-    'generalInfo: ${_string(f.generalInfo)})';
+    'generalInfo: ${_string(f.generalInfo)}, '
+    'nutrients: {${f.nutrients.entries.map((e) => 'Nutrient.${e.key.name}: ${e.value.toDouble()}').join(', ')}})';
 
 /// A camelCase identifier for [id] (`bread_(toast)` → `breadToast`), unique
 /// within [used].

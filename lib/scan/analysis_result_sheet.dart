@@ -362,7 +362,8 @@ class _RecommendationCard extends StatelessWidget {
                   Expanded(
                     child: Text(
                       'Safe to buy: no news or general info and it matches '
-                      'none of your preferences or health data.',
+                      'none of your preferences or health data.'
+                      '${_boostText(r)}',
                       style: theme.textTheme.bodyMedium,
                     ),
                   ),
@@ -389,21 +390,8 @@ class _RecommendationCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 8),
-                if ([
-                  if (!r.found) 'Not in the food database',
-                  if (r.hasNews) 'Active food news',
-                  for (final c in r.clashingConditions) c.label,
-                  for (final p in r.clashingPrefs) p.label,
-                ].isNotEmpty)
-                  Text(
-                    [
-                      if (!r.found) 'Not in the food database',
-                      if (r.hasNews) 'Active food news',
-                      for (final c in r.clashingConditions) c.label,
-                      for (final p in r.clashingPrefs) p.label,
-                    ].join(' · '),
-                    style: theme.textTheme.bodyMedium,
-                  ),
+                if (_reasons(r) case final reasons when reasons.isNotEmpty)
+                  Text(reasons.join(' · '), style: theme.textTheme.bodyMedium),
                 if (r.hasGeneralInfo ||
                     r.clashingConditions.isNotEmpty ||
                     r.clashingPrefs.isNotEmpty) ...[
@@ -412,6 +400,19 @@ class _RecommendationCard extends StatelessWidget {
                     _personalizedRationale(r),
                     style: theme.textTheme.bodyMedium,
                   ),
+                ],
+                if (r.excessNutrients.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'Your recent diet is already over the daily limit for '
+                    '${r.excessNutrients.map((n) => n.label.toLowerCase()).join(' and ')}, '
+                    'and this food is high in it.',
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                ],
+                if (r.boostsNutrients.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(_boostText(r).trim(), style: theme.textTheme.bodySmall),
                 ],
                 if (!hideAlternatives && r.alternatives.isNotEmpty) ...[
                   const SizedBox(height: 8),
@@ -427,6 +428,15 @@ class _RecommendationCard extends StatelessWidget {
       },
     );
   }
+
+  /// Short reason chips for why [r]'s food is not recommended.
+  List<String> _reasons(FoodRecommendation r) => [
+    if (!r.found) 'Not in the food database',
+    if (r.hasNews) 'Active food news',
+    for (final c in r.clashingConditions) c.label,
+    for (final p in r.clashingPrefs) p.label,
+    for (final n in r.excessNutrients) 'High in ${n.label}',
+  ];
 
   String _personalizedRationale(FoodRecommendation r) {
     final info = r.generalInfo?.trim();
@@ -474,6 +484,13 @@ class _RecommendationCard extends StatelessWidget {
     _ => label.toLowerCase(),
   };
 }
+
+/// Notes the nutrients [r]'s food would top up, or an empty string.
+String _boostText(FoodRecommendation r) => r.boostsNutrients.isEmpty
+    ? ''
+    : ' Good source of '
+          '${r.boostsNutrients.map((n) => n.label).join(', ')}, which your '
+          'recent diet is low in.';
 
 class _ProductCard extends StatelessWidget {
   const _ProductCard({required this.product});

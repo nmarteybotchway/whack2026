@@ -33,16 +33,21 @@ class FoodStore {
 
   static Future<FoodStore> signIn() async => FoodStore._(await _Auth.signIn());
 
-  Future<bool> exists(String id) async {
+  /// The food stored as `food/{id}`, or null if there is none.
+  Future<Food?> get(String id) async {
     final response = await http
         .get(
           Uri.parse('$_documentsUrl/food/${Uri.encodeComponent(id)}'),
           headers: await _auth.headers(),
         )
         .timeout(_httpTimeout);
-    if (response.statusCode == 404) return false;
+    if (response.statusCode == 404) return null;
     _check(response);
-    return true;
+    final fields = (jsonDecode(response.body) as Map)['fields'] as Map? ?? {};
+    return Food.fromMap({
+      for (final MapEntry(:key, :value) in fields.entries)
+        key as String: _decode(value as Map<String, dynamic>),
+    });
   }
 
   /// Every stored food, keyed by document ID.
@@ -179,11 +184,22 @@ Map<String, dynamic> _extractJson(String text, Map<String, Object?> schema) {
         when properties.length == 1 &&
             (properties.values.single as Map?)?['type'] == 'array' =>
       {properties.keys.single: l},
+    // Likewise a bare string, e.g. the news itself for `{"local_news": ""}`.
+    String s
+        when properties.length == 1 &&
+            (properties.values.single as Map?)?['type'] == 'string' =>
+      {properties.keys.single: s},
     _ => null,
   };
 
   final fences = RegExp(r'```(?:json)?\s*([\s\S]*?)```').allMatches(text);
   for (final candidate in [...fences.map((m) => m.group(1)!), text]) {
+    // Whole candidate first, which also catches a bare string such as `""`.
+    try {
+      if (match(jsonDecode(candidate.trim())) case final json?) return json;
+    } on FormatException {
+      // Not JSON as a whole; look for a bracketed span below.
+    }
     for (final (open, close) in [('{', '}'), ('[', ']')]) {
       for (
         var start = candidate.indexOf(open);
@@ -210,9 +226,11 @@ Map<String, dynamic> _extractJson(String text, Map<String, Object?> schema) {
   throw FormatException('No JSON matching the schema in reply', text);
 }
 
-/// Encodes strings, lists and string-keyed maps as a Firestore REST value.
+/// Encodes strings, numbers, lists and string-keyed maps as a Firestore REST
+/// value.
 Map<String, dynamic> _encode(Object? v) => switch (v) {
   String s => {'stringValue': s},
+  num n => {'doubleValue': n.toDouble()},
   List l => {
     'arrayValue': {'values': l.map(_encode).toList()},
   },
@@ -226,6 +244,8 @@ Map<String, dynamic> _encode(Object? v) => switch (v) {
 /// `updatedAt`) become null, which [Food.fromMap] ignores.
 Object? _decode(Map<String, dynamic> v) => switch (v) {
   {'stringValue': String s} => s,
+  {'doubleValue': num n} => n,
+  {'integerValue': String n} => int.parse(n),
   {'arrayValue': Map a} => [
     for (final e in (a['values'] as List? ?? const []))
       _decode(e as Map<String, dynamic>),

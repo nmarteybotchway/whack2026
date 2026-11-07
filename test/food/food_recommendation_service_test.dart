@@ -1,7 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hackathon/diet/nutrient_insights.dart';
 import 'package:hackathon/food/food.dart';
 import 'package:hackathon/food/food_recommendation_service.dart';
 import 'package:hackathon/food/health_condition.dart';
+import 'package:hackathon/food/nutrient.dart';
 import 'package:hackathon/food/preference.dart';
 
 // Same fixtures as test/food/food_test.dart.
@@ -35,6 +37,24 @@ const apples = Food(
 );
 
 const recalledTofu = Food(name: 'Tofu', localNews: 'Recalled batch detected.');
+
+const oranges = Food(name: 'Oranges', nutrients: {Nutrient.vitaminC: 53});
+
+const crisps = Food(
+  name: 'Crisps',
+  alternatives: {
+    HealthCondition.none: {
+      Preference.none: ['Popcorn', 'Oranges'],
+    },
+  },
+  nutrients: {Nutrient.sodium: 700, Nutrient.vitaminC: 15},
+);
+
+/// Insights from one day of [nutrition] totals, tracked today only.
+NutrientInsights insights(Map<String, double> nutrition) {
+  final today = DateTime(2026, 11, 7);
+  return NutrientInsights.fromDaily({today: nutrition}, today: today);
+}
 
 void main() {
   group('recommend', () {
@@ -111,6 +131,43 @@ void main() {
     });
   });
 
+  group('recommend with nutrients', () {
+    test('high in a nutrient the user is over the limit on is avoided', () {
+      final r = FoodRecommendationService.recommend(
+        crisps,
+        highNutrients: {Nutrient.sodium},
+      );
+      expect(r.shouldAvoid, isTrue);
+      expect(r.excessNutrients, {Nutrient.sodium});
+      expect(r.alternatives, ['Popcorn', 'Oranges']);
+    });
+
+    test('high in a nutrient the user is not over on is fine', () {
+      final r = FoodRecommendationService.recommend(crisps);
+      expect(r.canBuy, isTrue);
+      expect(r.excessNutrients, isEmpty);
+    });
+
+    test('rich in a low nutrient is a boost, not a reason to avoid', () {
+      final r = FoodRecommendationService.recommend(
+        oranges,
+        lowNutrients: {Nutrient.vitaminC, Nutrient.iron},
+      );
+      expect(r.canBuy, isTrue);
+      expect(r.boostsNutrients, {Nutrient.vitaminC});
+    });
+
+    test('substitutes covering low nutrients rank first', () {
+      final r = FoodRecommendationService.recommend(
+        crisps,
+        highNutrients: {Nutrient.sodium},
+        lowNutrients: {Nutrient.vitaminC},
+        alternativeFoods: {oranges.id: oranges},
+      );
+      expect(r.alternatives, ['Oranges', 'Popcorn']);
+    });
+  });
+
   group('parseProfile', () {
     test('missing document yields an empty profile', () {
       final p = FoodRecommendationService.parseProfile(null);
@@ -135,6 +192,26 @@ void main() {
       expect(p.prefs, isEmpty);
     });
 
+    test('insight gaps are low and limits over target are high', () {
+      final p = FoodRecommendationService.parseProfile(
+        null,
+        insights: insights({'VITC': 80, 'NA': 5000, 'FE': 2, 'BOGUS': 1}),
+      );
+      expect(p.lowNutrients, contains(Nutrient.iron)); // 2 of 14 mg
+      expect(p.lowNutrients, isNot(contains(Nutrient.vitaminC)));
+      expect(p.lowNutrients, isNot(contains(Nutrient.sodium)));
+      expect(p.highNutrients, {Nutrient.sodium}); // 5000 > 2400 mg
+    });
+
+    test('nothing tracked means nothing is low', () {
+      final p = FoodRecommendationService.parseProfile(
+        null,
+        insights: NutrientInsights.fromDaily({}, today: DateTime(2026, 11, 7)),
+      );
+      expect(p.lowNutrients, isEmpty);
+      expect(p.highNutrients, isEmpty);
+    });
+
     test('none strings never yield none values', () {
       final p = FoodRecommendationService.parseProfile({
         'religion': ['None'],
@@ -153,6 +230,8 @@ void main() {
         'dietary': ['Halal'],
         'health_conditions': ['hypertension'],
       },
+      insightsFetcher: (uid) async =>
+          NutrientInsights.fromDaily({}, today: DateTime(2026, 11, 7)),
     );
 
     test('matching user data triggers an alternative', () async {
@@ -166,6 +245,30 @@ void main() {
     test('name lookup normalizes via Food.idFor', () async {
       final r = await service.recommendFor(uid: 'u1', foodName: '  BACON ');
       expect(r.found, isTrue);
+    });
+
+    test('diet loads nutrients and ranks fetched substitutes', () async {
+      final foods = {
+        for (final f in [crisps, oranges]) f.id: f,
+      };
+      final service = FoodRecommendationService(
+        fetcher: (name) async => foods[Food.idFor(name)],
+        userFetcher: (uid) async => null,
+        insightsFetcher: (uid) async => insights({'NA': 20000, 'VITC': 10}),
+      );
+      final r = await service.recommendFor(uid: 'u1', foodName: 'Crisps');
+      expect(r.excessNutrients, {Nutrient.sodium});
+      expect(r.alternatives, ['Oranges', 'Popcorn']);
+    });
+
+    test('a failed diet read skips nutrient checks', () async {
+      final service = FoodRecommendationService(
+        fetcher: (name) async => crisps,
+        userFetcher: (uid) async => null,
+        insightsFetcher: (uid) async => throw Exception('offline'),
+      );
+      final r = await service.recommendFor(uid: 'u1', foodName: 'Crisps');
+      expect(r.canBuy, isTrue);
     });
 
     test('unknown food is flagged as not found', () async {
