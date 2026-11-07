@@ -7,10 +7,11 @@
 /// ```
 ///
 /// `food.txt` holds one food per line; blank lines and `#` comments are
-/// skipped. New foods get health conditions, personal prefs, alternatives,
-/// general info and local news from OpenRouter; foods already stored only have
-/// their local news refreshed, unless `--full` regenerates them completely
-/// (e.g. after the document format changes).
+/// skipped. New foods get health conditions, personal prefs, general info and
+/// local news from OpenRouter with web search, then a second call (without
+/// search) fills the alternatives for each condition/preference pair. Foods
+/// already stored only have their local news refreshed, unless `--full`
+/// regenerates them completely (e.g. after the document format changes).
 ///
 /// Step 1 of tool/fill_food_db.dart, which runs the whole pipeline.
 library;
@@ -75,40 +76,50 @@ final _fullSchema = {
         'enum': [for (final p in Preference.values) p.id],
       },
     },
-    // Strict schemas cannot have dynamic keys, so the alternatives map comes
-    // back as a list of {key, items} entries.
-    'alternatives': {
-      'type': 'array',
-      'items': {
-        'type': 'object',
-        'properties': {
-          'key': {
-            'type': 'string',
-            'enum': [
-              Food.generalKey,
-              for (final c in HealthCondition.values) c.id,
-              for (final p in Preference.values) p.id,
-            ],
-          },
-          'items': {
-            'type': 'array',
-            'items': {'type': 'string'},
-          },
-        },
-        'required': ['key', 'items'],
-        'additionalProperties': false,
-      },
-    },
     'general_info': {'type': 'string'},
     'local_news': {'type': 'string'},
   },
   'required': [
     'health_conditions',
     'personal_prefs',
-    'alternatives',
     'general_info',
     'local_news',
   ],
+  'additionalProperties': false,
+};
+
+// Strict schemas cannot have dynamic keys, so the nested alternatives map
+// comes back as a list of {health, pref, items} cells.
+final _alternativesSchema = {
+  'type': 'object',
+  'properties': {
+    'alternatives': {
+      'type': 'array',
+      'items': {
+        'type': 'object',
+        'properties': {
+          'health': {
+            'type': 'string',
+            'enum': [
+              Food.noneKey,
+              for (final c in HealthCondition.values) c.id,
+            ],
+          },
+          'pref': {
+            'type': 'string',
+            'enum': [Food.noneKey, for (final p in Preference.values) p.id],
+          },
+          'items': {
+            'type': 'array',
+            'items': {'type': 'string'},
+          },
+        },
+        'required': ['health', 'pref', 'items'],
+        'additionalProperties': false,
+      },
+    },
+  },
+  'required': ['alternatives'],
   'additionalProperties': false,
 };
 
@@ -215,14 +226,6 @@ Future<void> _fill(
     'cancer, high in saturated fat and salt). Use an empty string if the food '
     'is fine for a healthy person as part of a normal diet (e.g. apples, '
     'cabbage, eggs). Do not describe the food or its benefits.\n\n'
-    '"alternatives": substitutes for this food, as a list of {key, items} '
-    'entries. Add one entry for EACH key you listed in health_conditions and '
-    'personal_prefs (and no others), whose items are 2 to 4 substitutes that '
-    'are safe and suitable for someone with that condition or preference '
-    '(e.g. for bacon: "vegan" → tempeh bacon, smoked tofu; "hypertension" → '
-    'grilled chicken breast). If and only if general_info is not empty, also '
-    'add key "${Food.generalKey}" with 2 to 4 healthier substitutes that avoid '
-    'the problem it describes. Short names only.\n\n'
     '$_newsRules\n\nReply as JSON.',
     _fullSchema,
   );
@@ -236,34 +239,15 @@ Future<void> _fill(
       ?Preference.fromId(p as String),
   };
   final generalInfo = (reply['general_info'] as String).trim();
-  // Asked for [{key, items}] entries, but models sometimes return the map
-  // itself ({key: items}); accept either.
-  final entries = switch (reply['alternatives']) {
-    List l => [for (final e in l) (e['key'] as String, e['items'] as List)],
-    Map m => [for (final e in m.entries) (e.key as String, e.value as List)],
-    final other => throw FormatException('Bad alternatives: $other'),
-  };
-  final alternatives = <String, List<String>>{
-    for (final (key, items) in entries)
-      key: [
-        for (final a in items)
-          if ((a as String).trim() case final alt
-              when alt.isNotEmpty && Food.idFor(alt) != id)
-            alt,
-      ],
-  };
   final food = Food(
     name: name,
-    // Healthier substitutes only make sense when there is a general reason
-    // to avoid the food.
-    generalAlternatives: generalInfo.isEmpty
-        ? const []
-        : alternatives[Food.generalKey] ?? const [],
-    // Only keep lists for clashes this food actually has.
-    healthAlternatives: {
-      for (final c in healthConditions) c: ?alternatives[c.id],
-    },
-    prefAlternatives: {for (final p in personalPrefs) p: ?alternatives[p.id]},
+    alternatives: await _alternatives(
+      ai,
+      name,
+      healthConditions,
+      personalPrefs,
+      generalInfo,
+    ),
     healthConditions: healthConditions,
     personalPrefs: personalPrefs,
     generalInfo: generalInfo,
@@ -280,6 +264,89 @@ Future<void> _fill(
   existing
       ? await store.replace(food, const [])
       : await store.write(id, food.toMap(), create: true);
+}
+
+/// Asks for substitutes for every pair of (one of [conditions] or none) and
+/// (one of [prefs] or none). The none/none pair, healthier substitutes for
+/// anyone, is only asked for when [generalInfo] gives a reason to avoid the
+/// food.
+Future<Map<HealthCondition?, Map<Preference?, List<String>>>> _alternatives(
+  OpenRouterService ai,
+  String name,
+  Set<HealthCondition> conditions,
+  Set<Preference> prefs,
+  String generalInfo,
+) async {
+  final pairs = [
+    for (final c in [null, ...conditions])
+      for (final p in [null, ...prefs])
+        if (c != null || p != null || generalInfo.isNotEmpty) (c, p),
+  ];
+  if (pairs.isEmpty) return const {};
+
+  String describe(HealthCondition? c, Preference? p) => [
+    if (c != null) 'has ${c.label.toLowerCase()}',
+    if (p != null) 'follows ${p.label}',
+    if (c == null && p == null) 'is healthy (avoiding: $generalInfo)',
+  ].join(' and ');
+
+  final reply = await askJson(
+    ai,
+    'Suggest substitutes for "$name". For EACH line below, give 1 to 3 '
+    'common, widely available foods that can replace it and are safe and '
+    'suitable for that person, considering BOTH their health condition and '
+    'their preference. Short names only. Return one {health, pref, items} '
+    'entry per line, using the keys exactly as given.\n\n'
+    '${pairs.map((e) => '- health "${e.$1?.id ?? Food.noneKey}", pref '
+        '"${e.$2?.id ?? Food.noneKey}": someone who ${describe(e.$1, e.$2)}').join('\n')}'
+    '\n\nReply as JSON.',
+    _alternativesSchema,
+    timeout: const Duration(minutes: 3),
+  );
+
+  // Asked for a list of cells, but models sometimes return the nested map
+  // itself ({health: {pref: items}}); accept either.
+  final cells = switch (reply['alternatives']) {
+    // Skip malformed cells rather than failing the whole food.
+    List l => [
+      for (final e in l)
+        if (e case {'health': String h, 'pref': String p, 'items': List items})
+          (h, p, items),
+    ],
+    Map m => [
+      for (final row in m.entries)
+        if (row.value is Map)
+          for (final cell in (row.value as Map).entries)
+            if (cell.value is List)
+              (row.key as String, cell.key as String, cell.value as List),
+    ],
+    final other => throw FormatException('Bad alternatives: $other'),
+  };
+  final wanted = {
+    for (final (c, p) in pairs) (c?.id ?? Food.noneKey, p?.id ?? Food.noneKey),
+  };
+  final id = Food.idFor(name);
+  final result = <HealthCondition?, Map<Preference?, List<String>>>{};
+  for (final (h, p, items) in cells) {
+    // Only keep pairs that were asked for, which also enforces the none/none
+    // rule.
+    if (!wanted.contains((h, p))) continue;
+    final alts = [
+      for (final a in items)
+        if ((a as String).trim() case final alt
+            when alt.isNotEmpty && Food.idFor(alt) != id)
+          alt,
+    ];
+    if (alts.isEmpty) continue;
+    final c = h == Food.noneKey ? null : HealthCondition.fromId(h);
+    final pref = p == Food.noneKey ? null : Preference.fromId(p);
+    (result[c] ??= {})[pref] = alts;
+  }
+  final missing = wanted.length - result.values.expand((r) => r.keys).length;
+  if (missing > 0) {
+    stderr.writeln('  $name: $missing pair(s) got no alternatives');
+  }
+  return result;
 }
 
 Future<Map<String, dynamic>> _ask(

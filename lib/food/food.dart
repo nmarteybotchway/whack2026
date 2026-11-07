@@ -6,46 +6,37 @@ import 'preference.dart';
 /// Firestore has no set type, so `health_conditions` and `personal_prefs` are
 /// stored as arrays of [HealthCondition.id]s and [Preference.id]s.
 ///
-/// `alternatives` is a map from a [HealthCondition.id] or [Preference.id] to
-/// substitutes suitable for someone with that condition or preference. When
-/// [generalInfo] gives a reason for anyone to avoid the food, [generalKey]
-/// maps to healthier substitutes; otherwise that key is absent:
+/// `alternatives` maps a health condition, then a personal preference, to
+/// substitutes suitable for someone with both. [noneKey] stands for no
+/// condition or no preference, so `none.none` holds healthier substitutes for
+/// anyone and exists only when [generalInfo] is not empty:
 ///
 /// ```json
 /// "alternatives": {
-///   "general": ["Roast chicken"],
-///   "hypertension": ["Grilled chicken breast"],
-///   "vegan": ["Tempeh bacon", "Smoked tofu"]
+///   "none":         {"none": ["Roast chicken"], "vegan": ["Smoked tofu"]},
+///   "hypertension": {"none": ["Grilled chicken"], "vegan": ["Tofu"]}
 /// }
 /// ```
 class Food {
   const Food({
     required this.name,
-    this.generalAlternatives = const [],
-    this.healthAlternatives = const {},
-    this.prefAlternatives = const {},
+    this.alternatives = const {},
     this.healthConditions = const {},
     this.personalPrefs = const {},
     this.localNews = '',
     this.generalInfo = '',
   });
 
-  /// Key in `alternatives` for healthier substitutes, present only when
-  /// [generalInfo] is not empty.
-  static const generalKey = 'general';
+  /// Key in `alternatives` for no health condition or no preference.
+  static const noneKey = 'none';
 
   /// Display name, e.g. `Peanut Butter`; stored as `food`.
   final String name;
 
-  /// Healthier substitutes for anyone, given the reason in [generalInfo];
-  /// empty when [generalInfo] is.
-  final List<String> generalAlternatives;
-
-  /// Substitutes suitable for someone with each health condition.
-  final Map<HealthCondition, List<String>> healthAlternatives;
-
-  /// Substitutes suitable for someone with each personal preference.
-  final Map<Preference, List<String>> prefAlternatives;
+  /// Substitutes by health condition, then personal preference; a null key
+  /// is [noneKey]. `alternatives[null]?[null]` is empty unless
+  /// [generalInfo] is set.
+  final Map<HealthCondition?, Map<Preference?, List<String>>> alternatives;
 
   /// Health conditions this food clashes with.
   final Set<HealthCondition> healthConditions;
@@ -66,20 +57,27 @@ class Food {
 
   /// Substitutes for a person with [conditions] and [prefs].
   ///
-  /// Uses the lists for whichever of them this food has alternatives for,
-  /// ranking substitutes that suit more of them first. Falls back to
-  /// [generalAlternatives] when none apply, including when the person has no
-  /// conditions or preferences at all; that is empty when the food is fine
-  /// for them.
+  /// Looks up every pair of their conditions and preferences that this food
+  /// has alternatives for, using [noneKey] on a side where none of theirs
+  /// apply, and ranks substitutes that suit more pairs first. Empty when the
+  /// food is fine for them.
   List<String> alternativesFor({
     Set<HealthCondition> conditions = const {},
     Set<Preference> prefs = const {},
   }) {
-    final lists = [
-      for (final c in conditions) ?healthAlternatives[c],
-      for (final p in prefs) ?prefAlternatives[p],
+    final matched = conditions.where(alternatives.containsKey);
+    final rows = [
+      for (final c in matched.isEmpty ? const [null] : matched)
+        ?alternatives[c],
     ];
-    if (lists.isEmpty) return generalAlternatives;
+    final lists = [
+      for (final row in rows)
+        for (final p in [
+          ...prefs.where(row.containsKey),
+          if (!prefs.any(row.containsKey)) null,
+        ])
+          ?row[p],
+    ];
 
     final votes = <String, int>{};
     for (final list in lists) {
@@ -99,55 +97,57 @@ class Food {
   String get id => idFor(name);
 
   /// Unknown condition and preference IDs are skipped so older clients
-  /// tolerate new ones.
-  factory Food.fromMap(Map<String, dynamic> data) {
-    final alternatives = switch (data['alternatives']) {
-      Map m => {
-        for (final MapEntry(:key, :value) in m.entries)
-          key as String: List<String>.from(value as List),
-      },
-      // Older documents stored one flat list.
-      List l => {generalKey: List<String>.from(l)},
-      _ => const <String, List<String>>{},
-    };
-    return Food(
-      name: data['food'] as String,
-      generalAlternatives: alternatives[generalKey] ?? const [],
-      healthAlternatives: {
-        for (final MapEntry(:key, :value) in alternatives.entries)
-          ?HealthCondition.fromId(key): value,
-      },
-      prefAlternatives: {
-        for (final MapEntry(:key, :value) in alternatives.entries)
-          ?Preference.fromId(key): value,
-      },
-      healthConditions: {
-        for (final id in List<String>.from(
-          data['health_conditions'] ?? const [],
+  /// tolerate new ones, as are alternatives in an older, non-nested format.
+  factory Food.fromMap(Map<String, dynamic> data) => Food(
+    name: data['food'] as String,
+    alternatives: {
+      for (final MapEntry(key: h, value: row)
+          in (data['alternatives'] as Map? ?? const {}).entries)
+        if ((_key(h as String, HealthCondition.fromId), row) case (
+          (final c,),
+          Map row,
         ))
-          ?HealthCondition.fromId(id),
-      },
-      personalPrefs: {
-        for (final id in List<String>.from(data['personal_prefs'] ?? const []))
-          ?Preference.fromId(id),
-      },
-      localNews: data['local_news'] as String? ?? '',
-      generalInfo: data['general_info'] as String? ?? '',
-    );
-  }
+          c: {
+            for (final MapEntry(key: p, value: alts) in row.entries)
+              if ((_key(p as String, Preference.fromId), alts) case (
+                (final pref,),
+                List alts,
+              ))
+                pref: List<String>.from(alts),
+          },
+    },
+    healthConditions: {
+      for (final id in List<String>.from(data['health_conditions'] ?? const []))
+        ?HealthCondition.fromId(id),
+    },
+    personalPrefs: {
+      for (final id in List<String>.from(data['personal_prefs'] ?? const []))
+        ?Preference.fromId(id),
+    },
+    localNews: data['local_news'] as String? ?? '',
+    generalInfo: data['general_info'] as String? ?? '',
+  );
 
   Map<String, dynamic> toMap() => {
     'food': name,
     'alternatives': {
-      if (generalAlternatives.isNotEmpty) generalKey: generalAlternatives,
-      for (final MapEntry(:key, :value) in healthAlternatives.entries)
-        key.id: value,
-      for (final MapEntry(:key, :value) in prefAlternatives.entries)
-        key.id: value,
+      for (final MapEntry(key: c, value: row) in alternatives.entries)
+        c?.id ?? noneKey: {
+          for (final MapEntry(key: p, value: alts) in row.entries)
+            p?.id ?? noneKey: alts,
+        },
     },
     'health_conditions': [for (final c in healthConditions) c.id],
     'personal_prefs': [for (final p in personalPrefs) p.id],
     'local_news': localNews,
     'general_info': generalInfo,
   };
+
+  /// Parses an `alternatives` key: `(null,)` for [noneKey], `(value,)` for a
+  /// known ID, or null to skip an unknown one.
+  static (T?,)? _key<T>(String key, T? Function(String) fromId) {
+    if (key == noneKey) return (null,);
+    final value = fromId(key);
+    return value == null ? null : (value,);
+  }
 }

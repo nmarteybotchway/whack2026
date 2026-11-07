@@ -82,9 +82,7 @@ ${values.join(',\n')}${values.isEmpty ? '' : ';'}
 
 String _food(Food f) =>
     'Food(name: ${_string(f.name)}, '
-    'generalAlternatives: ${_list(f.generalAlternatives)}, '
-    'healthAlternatives: {${f.healthAlternatives.entries.map((e) => 'HealthCondition.${e.key.name}: ${_list(e.value)}').join(', ')}}, '
-    'prefAlternatives: {${f.prefAlternatives.entries.map((e) => 'Preference.${e.key.name}: ${_list(e.value)}').join(', ')}}, '
+    'alternatives: {${f.alternatives.entries.map((row) => '${row.key == null ? 'null' : 'HealthCondition.${row.key!.name}'}: {${row.value.entries.map((cell) => '${cell.key == null ? 'null' : 'Preference.${cell.key!.name}'}: ${_list(cell.value)}').join(', ')}}').join(', ')}}, '
     'healthConditions: {${f.healthConditions.map((c) => 'HealthCondition.${c.name}').join(', ')}}, '
     'personalPrefs: {${f.personalPrefs.map((p) => 'Preference.${p.name}').join(', ')}}, '
     'localNews: ${_string(f.localNews)}, '
