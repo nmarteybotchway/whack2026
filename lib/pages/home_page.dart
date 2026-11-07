@@ -8,6 +8,7 @@ import 'package:speech_to_text/speech_to_text.dart';
 import '../diet/diet_history_page.dart';
 import '../health_data/health_tracking_controller.dart';
 import '../health_data/health_tracking_card.dart';
+import '../health_data/heart_rate_page.dart';
 import '../scan/scan_page.dart';
 import 'settings_page.dart';
 
@@ -213,6 +214,17 @@ class _HomeTab extends StatelessWidget {
         Text('UID: ${user.uid}', style: theme.textTheme.bodySmall),
         const SizedBox(height: 16),
         const _SpeechToTextDemoCard(),
+        Card(
+          child: ListTile(
+            leading: Icon(Icons.favorite, color: theme.colorScheme.error),
+            title: const Text('Heart rate'),
+            subtitle: const Text('From Samsung Health / Health Connect'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const HeartRatePage()),
+            ),
+          ),
+        ),
       ],
     );
   }
