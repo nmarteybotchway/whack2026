@@ -25,15 +25,27 @@ import 'src/food_store.dart';
 /// Web-search replies typically take 2-6 minutes.
 const _aiTimeout = Duration(minutes: 10);
 
-const _newsRules = '''
-"local_news" is ONLY an active food-safety event affecting this food, such as a
-pathogen outbreak (Salmonella, E. coli, Listeria, norovirus, etc.), a
-contamination or allergen recall, or an animal disease such as BSE (mad cow
-disease) or avian flu, reported within the last 90 days. Write one or two
-sentences naming the problem, the affected countries or regions, and when it
-was reported. General nutrition news, studies and diet advice do not count.
-If nothing qualifies, or you cannot confirm it from search results, return an
-empty string. Never invent an event.''';
+/// Where `local_news` is about; the app's users are in Coventry.
+const _area = 'Coventry and the UK';
+
+/// How far back `local_news` looks; older events are left out.
+const _newsDays = 30;
+
+const _newsRules =
+    '''
+"local_news" is ONLY an active food-safety event affecting this food for
+people in $_area, such as a pathogen outbreak (Salmonella, E. coli, Listeria,
+norovirus, etc.), a contamination or allergen recall, or an animal disease
+such as BSE (mad cow disease) or avian flu. It must have been reported within
+the last $_newsDays days, and it must affect Coventry, the West Midlands or
+the UK as a whole: UK outbreaks, Food Standards Agency (FSA) alerts and
+recalls, or products sold in UK shops. Prefer events in Coventry or the West
+Midlands, then UK-wide ones. Ignore events elsewhere unless the affected
+product is sold in the UK. Write one or two plain sentences naming the
+problem, where in the UK it applies, and the date it was reported, with no
+links or citations. General nutrition news, studies and diet advice do not
+count. If nothing recent qualifies, or you cannot confirm it from search
+results, return an empty string. Never invent an event.''';
 
 final _newsSchema = {
   'type': 'object',
@@ -142,7 +154,8 @@ Future<void> _fill(
   if (existing) {
     final reply = await _ask(
       ai,
-      'Today is $today. Search for current food-safety news about "$name".\n'
+      'Today is $today. Search for current food-safety news about "$name" '
+      'affecting $_area.\n'
       '$_newsRules\nReply as JSON.',
       _newsSchema,
     );
