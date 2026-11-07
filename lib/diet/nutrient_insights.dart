@@ -1,4 +1,6 @@
+import 'diet_window_service.dart';
 import 'nutrition_service.dart';
+import 'receipt_store.dart';
 
 /// Display name and recommended adult daily intake for one tracked nutrient,
 /// in the unit from [nutrientUnits].
@@ -157,6 +159,25 @@ class NutrientInsights {
       if (c.status == NutrientStatus.lacking || c.status == NutrientStatus.low)
         c,
   ];
+
+  /// Loads [userId]'s insights for the last [days] days (at most the
+  /// [DietWindowService] window): receipt days from the window plus foods
+  /// logged through the assistant, combined per day.
+  static Future<NutrientInsights> load(String userId, {int? days}) async {
+    days ??= DietWindowService.window.inDays;
+    final now = DateTime.now();
+    final start = DateTime(now.year, now.month, now.day - (days - 1));
+    final (receiptDays, intake) = await (
+      DietWindowService(userId).recentDays(),
+      ReceiptStore(userId).loggedIntakeSince(start),
+    ).wait;
+    for (final day in receiptDays) {
+      if (day.date.isBefore(start)) continue;
+      final into = intake.putIfAbsent(day.date, () => {});
+      day.nutrition.forEach((k, v) => into[k] = (into[k] ?? 0) + v);
+    }
+    return NutrientInsights.fromDaily(intake, today: now, days: days);
+  }
 
   /// Builds insights for the [days] days ending on [today] from per-day
   /// nutrient totals in [intake], keyed by midnight dates.

@@ -158,14 +158,16 @@ service cloud.firestore {
         ])
         && request.resource.data.keys().hasOnly([
           'food', 'alternatives', 'health_conditions', 'personal_prefs',
-          'local_news', 'general_info', 'updatedAt'
+          'local_news', 'general_info', 'nutrients', 'updatedAt'
         ])
         && request.resource.data.food is string
         && request.resource.data.alternatives is map
         && request.resource.data.health_conditions is list
         && request.resource.data.personal_prefs is list
         && request.resource.data.local_news is string
-        && request.resource.data.general_info is string;
+        && request.resource.data.general_info is string
+        // Optional: foods stored before nutrients existed have none.
+        && (!('nutrients' in request.resource.data) || request.resource.data.nutrients is map);
     }
     match /food_images/{imageId} {
       // Written by tool/fill_food_images.dart; url and page are empty when

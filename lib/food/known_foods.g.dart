@@ -3,6 +3,7 @@
 
 import 'food.dart';
 import 'health_condition.dart';
+import 'nutrient.dart';
 import 'preference.dart';
 
 /// Every food stored in Firestore when this file was generated.
@@ -23,6 +24,20 @@ enum KnownFood {
       personalPrefs: {},
       localNews: '',
       generalInfo: '',
+      nutrients: {
+        Nutrient.vitaminC: 4.6,
+        Nutrient.iron: 0.12,
+        Nutrient.calcium: 6.0,
+        Nutrient.magnesium: 5.0,
+        Nutrient.vitaminE: 0.18,
+        Nutrient.vitaminB6: 0.041,
+        Nutrient.folate: 3.0,
+        Nutrient.vitaminK: 2.2,
+        Nutrient.vitaminA: 3.0,
+        Nutrient.potassium: 107.0,
+        Nutrient.zinc: 0.04,
+        Nutrient.sodium: 1.0,
+      },
     ),
   ),
   bacon(
@@ -30,152 +45,18 @@ enum KnownFood {
     Food(
       name: 'Bacon',
       alternatives: {
-        HealthCondition.hypertension: {
-          Preference.kosher: [
-            'Grilled chicken breast',
-            'Low-sodium kosher turkey bacon',
-            'Grilled tomatoes',
-          ],
-          Preference.judaism: [
-            'Grilled chicken breast',
-            'Low-sodium kosher turkey bacon',
-            'Grilled tomatoes',
-          ],
-          Preference.vegetarian: [
-            'Unsalted tofu bacon',
-            'Grilled mushrooms',
-            'Avocado slices',
-          ],
-          Preference.none: [
-            'Grilled chicken breast',
-            'Low-sodium turkey bacon',
-            'Grilled tomatoes',
-          ],
-          Preference.islam: [
-            'Grilled chicken breast',
-            'Low-sodium halal turkey bacon',
-            'Grilled tomatoes',
-          ],
-          Preference.vegan: [
-            'Unsalted tofu bacon',
-            'Grilled mushrooms',
-            'Avocado slices',
-          ],
-          Preference.pescatarian: [
-            'Grilled fresh fish',
-            'Unsalted tofu bacon',
-            'Grilled mushrooms',
-          ],
-          Preference.halal: [
-            'Grilled chicken breast',
-            'Low-sodium halal turkey bacon',
-            'Grilled tomatoes',
-          ],
-        },
-        HealthCondition.none: {
-          Preference.islam: [
-            'Halal beef bacon',
-            'Smoked salmon',
-            'Tempeh bacon',
-          ],
-          Preference.judaism: ['Beef bacon', 'Smoked salmon', 'Tempeh bacon'],
-          Preference.none: ['Turkey bacon', 'Smoked salmon', 'Tempeh bacon'],
-          Preference.kosher: ['Beef bacon', 'Smoked salmon', 'Tempeh bacon'],
-          Preference.halal: [
-            'Halal beef bacon',
-            'Smoked salmon',
-            'Tempeh bacon',
-          ],
-          Preference.pescatarian: [
-            'Smoked salmon',
-            'Tempeh bacon',
-            'Mushroom bacon',
-          ],
-          Preference.vegetarian: [
-            'Tempeh bacon',
-            'Mushroom bacon',
-            'Tofu bacon',
-          ],
-          Preference.vegan: ['Tempeh bacon', 'Coconut bacon', 'Mushroom bacon'],
-        },
-        HealthCondition.diabetes: {
-          Preference.islam: [
-            'Halal turkey bacon',
-            'Smoked salmon',
-            'Grilled chicken breast',
-          ],
-          Preference.judaism: [
-            'Kosher turkey bacon',
-            'Smoked salmon',
-            'Grilled chicken breast',
-          ],
-          Preference.kosher: [
-            'Kosher turkey bacon',
-            'Smoked salmon',
-            'Grilled chicken breast',
-          ],
-          Preference.pescatarian: [
-            'Smoked salmon',
-            'Tempeh bacon',
-            'Grilled mushrooms',
-          ],
-          Preference.vegetarian: [
-            'Tempeh bacon',
-            'Tofu bacon',
-            'Grilled mushrooms',
-          ],
-          Preference.none: [
-            'Turkey bacon',
-            'Smoked salmon',
-            'Grilled chicken breast',
-          ],
-          Preference.vegan: ['Tempeh bacon', 'Tofu bacon', 'Coconut bacon'],
-          Preference.halal: [
-            'Halal turkey bacon',
-            'Smoked salmon',
-            'Grilled chicken breast',
-          ],
-        },
-        HealthCondition.highCholesterol: {
-          Preference.vegan: ['Tempeh bacon', 'Grilled mushrooms', 'Tofu bacon'],
-          Preference.pescatarian: [
-            'Smoked salmon',
-            'Tempeh bacon',
-            'Grilled mushrooms',
-          ],
-          Preference.judaism: [
-            'Smoked salmon',
-            'Grilled chicken breast',
-            'Tempeh bacon',
-          ],
-          Preference.halal: [
-            'Smoked salmon',
-            'Grilled chicken breast',
-            'Tempeh bacon',
-          ],
-          Preference.kosher: [
-            'Smoked salmon',
-            'Grilled chicken breast',
-            'Tempeh bacon',
-          ],
-          Preference.none: [
-            'Smoked salmon',
-            'Grilled chicken breast',
-            'Tempeh bacon',
-          ],
-          Preference.vegetarian: [
-            'Tempeh bacon',
-            'Grilled mushrooms',
-            'Tofu bacon',
-          ],
-          Preference.islam: [
-            'Smoked salmon',
-            'Grilled chicken breast',
-            'Tempeh bacon',
-          ],
-        },
         HealthCondition.heartDisease: {
-          Preference.islam: [
+          Preference.vegan: [
+            'Tempeh bacon',
+            'Grilled mushrooms',
+            'Avocado slices',
+          ],
+          Preference.judaism: [
+            'Smoked salmon',
+            'Grilled chicken breast',
+            'Grilled mushrooms',
+          ],
+          Preference.kosher: [
             'Smoked salmon',
             'Grilled chicken breast',
             'Grilled mushrooms',
@@ -190,72 +71,20 @@ enum KnownFood {
             'Tempeh bacon',
             'Grilled mushrooms',
           ],
-          Preference.vegan: [
-            'Tempeh bacon',
-            'Grilled mushrooms',
-            'Avocado slices',
-          ],
-          Preference.kosher: [
-            'Smoked salmon',
-            'Grilled chicken breast',
-            'Grilled mushrooms',
-          ],
-          Preference.judaism: [
-            'Smoked salmon',
-            'Grilled chicken breast',
-            'Grilled mushrooms',
-          ],
-          Preference.halal: [
-            'Smoked salmon',
-            'Grilled chicken breast',
-            'Grilled mushrooms',
-          ],
           Preference.vegetarian: [
             'Tempeh bacon',
             'Grilled mushrooms',
             'Avocado slices',
-          ],
-        },
-        HealthCondition.pregnancy: {
-          Preference.halal: [
-            'Cooked lean chicken',
-            'Cooked salmon',
-            'Cooked eggs',
-          ],
-          Preference.vegan: [
-            'Tempeh bacon',
-            'Cooked tofu',
-            'Grilled mushrooms',
-          ],
-          Preference.kosher: [
-            'Cooked lean chicken',
-            'Cooked salmon',
-            'Cooked eggs',
-          ],
-          Preference.judaism: [
-            'Cooked lean chicken',
-            'Cooked salmon',
-            'Cooked eggs',
           ],
           Preference.islam: [
-            'Cooked lean chicken',
-            'Cooked salmon',
-            'Cooked eggs',
-          ],
-          Preference.none: [
-            'Cooked lean chicken',
-            'Cooked salmon',
-            'Cooked eggs',
-          ],
-          Preference.vegetarian: [
-            'Cooked eggs',
-            'Tempeh bacon',
+            'Smoked salmon',
+            'Grilled chicken breast',
             'Grilled mushrooms',
           ],
-          Preference.pescatarian: [
-            'Cooked salmon',
-            'Cooked eggs',
-            'Tempeh bacon',
+          Preference.halal: [
+            'Smoked salmon',
+            'Grilled chicken breast',
+            'Grilled mushrooms',
           ],
         },
         HealthCondition.kidneyDisease: {
@@ -263,6 +92,26 @@ enum KnownFood {
             'Egg whites',
             'Unsalted rice cakes',
             'Small portion grilled tofu',
+          ],
+          Preference.judaism: [
+            'Egg whites',
+            'Small portion grilled chicken breast',
+            'Unsalted rice cakes',
+          ],
+          Preference.islam: [
+            'Egg whites',
+            'Small portion grilled chicken breast',
+            'Unsalted rice cakes',
+          ],
+          Preference.halal: [
+            'Egg whites',
+            'Small portion grilled chicken breast',
+            'Unsalted rice cakes',
+          ],
+          Preference.kosher: [
+            'Egg whites',
+            'Small portion grilled chicken breast',
+            'Unsalted rice cakes',
           ],
           Preference.pescatarian: [
             'Egg whites',
@@ -274,30 +123,196 @@ enum KnownFood {
             'Small portion grilled tofu',
             'Unsalted roasted chickpeas',
           ],
-          Preference.judaism: [
-            'Egg whites',
-            'Small portion grilled chicken breast',
-            'Unsalted rice cakes',
-          ],
-          Preference.halal: [
-            'Egg whites',
-            'Small portion grilled chicken breast',
-            'Unsalted rice cakes',
-          ],
-          Preference.islam: [
-            'Egg whites',
-            'Small portion grilled chicken breast',
-            'Unsalted rice cakes',
-          ],
           Preference.none: [
             'Egg whites',
             'Small portion grilled chicken breast',
             'Unsalted rice cakes',
           ],
+        },
+        HealthCondition.diabetes: {
+          Preference.pescatarian: [
+            'Smoked salmon',
+            'Tempeh bacon',
+            'Grilled mushrooms',
+          ],
           Preference.kosher: [
-            'Egg whites',
-            'Small portion grilled chicken breast',
-            'Unsalted rice cakes',
+            'Kosher turkey bacon',
+            'Smoked salmon',
+            'Grilled chicken breast',
+          ],
+          Preference.halal: [
+            'Halal turkey bacon',
+            'Smoked salmon',
+            'Grilled chicken breast',
+          ],
+          Preference.islam: [
+            'Halal turkey bacon',
+            'Smoked salmon',
+            'Grilled chicken breast',
+          ],
+          Preference.vegan: ['Tempeh bacon', 'Tofu bacon', 'Coconut bacon'],
+          Preference.vegetarian: [
+            'Tempeh bacon',
+            'Tofu bacon',
+            'Grilled mushrooms',
+          ],
+          Preference.none: [
+            'Turkey bacon',
+            'Smoked salmon',
+            'Grilled chicken breast',
+          ],
+          Preference.judaism: [
+            'Kosher turkey bacon',
+            'Smoked salmon',
+            'Grilled chicken breast',
+          ],
+        },
+        HealthCondition.pregnancy: {
+          Preference.vegan: [
+            'Tempeh bacon',
+            'Cooked tofu',
+            'Grilled mushrooms',
+          ],
+          Preference.vegetarian: [
+            'Cooked eggs',
+            'Tempeh bacon',
+            'Grilled mushrooms',
+          ],
+          Preference.kosher: [
+            'Cooked lean chicken',
+            'Cooked salmon',
+            'Cooked eggs',
+          ],
+          Preference.judaism: [
+            'Cooked lean chicken',
+            'Cooked salmon',
+            'Cooked eggs',
+          ],
+          Preference.halal: [
+            'Cooked lean chicken',
+            'Cooked salmon',
+            'Cooked eggs',
+          ],
+          Preference.islam: [
+            'Cooked lean chicken',
+            'Cooked salmon',
+            'Cooked eggs',
+          ],
+          Preference.pescatarian: [
+            'Cooked salmon',
+            'Cooked eggs',
+            'Tempeh bacon',
+          ],
+          Preference.none: [
+            'Cooked lean chicken',
+            'Cooked salmon',
+            'Cooked eggs',
+          ],
+        },
+        HealthCondition.highCholesterol: {
+          Preference.none: [
+            'Smoked salmon',
+            'Grilled chicken breast',
+            'Tempeh bacon',
+          ],
+          Preference.vegetarian: [
+            'Tempeh bacon',
+            'Grilled mushrooms',
+            'Tofu bacon',
+          ],
+          Preference.islam: [
+            'Smoked salmon',
+            'Grilled chicken breast',
+            'Tempeh bacon',
+          ],
+          Preference.judaism: [
+            'Smoked salmon',
+            'Grilled chicken breast',
+            'Tempeh bacon',
+          ],
+          Preference.halal: [
+            'Smoked salmon',
+            'Grilled chicken breast',
+            'Tempeh bacon',
+          ],
+          Preference.pescatarian: [
+            'Smoked salmon',
+            'Tempeh bacon',
+            'Grilled mushrooms',
+          ],
+          Preference.kosher: [
+            'Smoked salmon',
+            'Grilled chicken breast',
+            'Tempeh bacon',
+          ],
+          Preference.vegan: ['Tempeh bacon', 'Grilled mushrooms', 'Tofu bacon'],
+        },
+        HealthCondition.none: {
+          Preference.vegan: ['Tempeh bacon', 'Coconut bacon', 'Mushroom bacon'],
+          Preference.kosher: ['Beef bacon', 'Smoked salmon', 'Tempeh bacon'],
+          Preference.pescatarian: [
+            'Smoked salmon',
+            'Tempeh bacon',
+            'Mushroom bacon',
+          ],
+          Preference.islam: [
+            'Halal beef bacon',
+            'Smoked salmon',
+            'Tempeh bacon',
+          ],
+          Preference.halal: [
+            'Halal beef bacon',
+            'Smoked salmon',
+            'Tempeh bacon',
+          ],
+          Preference.judaism: ['Beef bacon', 'Smoked salmon', 'Tempeh bacon'],
+          Preference.vegetarian: [
+            'Tempeh bacon',
+            'Mushroom bacon',
+            'Tofu bacon',
+          ],
+          Preference.none: ['Turkey bacon', 'Smoked salmon', 'Tempeh bacon'],
+        },
+        HealthCondition.hypertension: {
+          Preference.kosher: [
+            'Grilled chicken breast',
+            'Low-sodium kosher turkey bacon',
+            'Grilled tomatoes',
+          ],
+          Preference.vegan: [
+            'Unsalted tofu bacon',
+            'Grilled mushrooms',
+            'Avocado slices',
+          ],
+          Preference.vegetarian: [
+            'Unsalted tofu bacon',
+            'Grilled mushrooms',
+            'Avocado slices',
+          ],
+          Preference.pescatarian: [
+            'Grilled fresh fish',
+            'Unsalted tofu bacon',
+            'Grilled mushrooms',
+          ],
+          Preference.judaism: [
+            'Grilled chicken breast',
+            'Low-sodium kosher turkey bacon',
+            'Grilled tomatoes',
+          ],
+          Preference.none: [
+            'Grilled chicken breast',
+            'Low-sodium turkey bacon',
+            'Grilled tomatoes',
+          ],
+          Preference.halal: [
+            'Grilled chicken breast',
+            'Low-sodium halal turkey bacon',
+            'Grilled tomatoes',
+          ],
+          Preference.islam: [
+            'Grilled chicken breast',
+            'Low-sodium halal turkey bacon',
+            'Grilled tomatoes',
           ],
         },
       },
@@ -318,8 +333,21 @@ enum KnownFood {
         Preference.vegan,
         Preference.pescatarian,
       },
-      localNews: 'On 27 June 2026 Morrisons recalled its Maple & Bacon \'Back of the Net\' product in England, Scotland and Wales because some packs contained undeclared milk. On 3 September 2026 Tesco recalled Tesco Finest Caesar & Smoked Bacon Coleslaw in the UK because some packs contained undeclared mustard.',
+      localNews: '',
       generalInfo: 'Bacon is processed meat classified by the WHO as a Group 1 carcinogen, and it is typically very high in salt, saturated fat and nitrites/nitrates, so it should only be eaten occasionally rather than as a regular food.',
+      nutrients: {
+        Nutrient.zinc: 1.2,
+        Nutrient.sodium: 1140.0,
+        Nutrient.potassium: 300.0,
+        Nutrient.vitaminB6: 0.46,
+        Nutrient.vitaminD: 0.3,
+        Nutrient.magnesium: 17.0,
+        Nutrient.vitaminC: 1.0,
+        Nutrient.calcium: 5.0,
+        Nutrient.iron: 0.4,
+        Nutrient.vitaminE: 0.02,
+        Nutrient.folate: 3.0,
+      },
     ),
   ),
   breadToast(
@@ -327,16 +355,12 @@ enum KnownFood {
     Food(
       name: 'Bread (Toast)',
       alternatives: {
-        HealthCondition.wheatAllergy: {
+        HealthCondition.none: {
+          Preference.none: ['Wholegrain bread', 'Oatcakes', 'Rye crispbread'],
           Preference.glutenFree: [
             'Gluten-free bread',
             'Rice cakes',
             'Corn cakes',
-          ],
-          Preference.none: [
-            '100% rye bread',
-            'Wheat-free oatcakes',
-            'Rice cakes',
           ],
         },
         HealthCondition.diabetes: {
@@ -347,21 +371,33 @@ enum KnownFood {
             'Sweet potato toast',
           ],
         },
-        HealthCondition.coeliacDisease: {
-          Preference.glutenFree: [
-            'Gluten-free bread',
-            'Gluten-free oatcakes',
+        HealthCondition.wheatAllergy: {
+          Preference.none: [
+            '100% rye bread',
+            'Wheat-free oatcakes',
             'Rice cakes',
           ],
-          Preference.none: ['Gluten-free bread', 'Rice cakes', 'Corn cakes'],
-        },
-        HealthCondition.none: {
-          Preference.none: ['Wholegrain bread', 'Oatcakes', 'Rye crispbread'],
           Preference.glutenFree: [
             'Gluten-free bread',
             'Rice cakes',
             'Corn cakes',
           ],
+        },
+        HealthCondition.coeliacDisease: {
+          Preference.none: ['Gluten-free bread', 'Rice cakes', 'Corn cakes'],
+          Preference.glutenFree: [
+            'Gluten-free bread',
+            'Gluten-free oatcakes',
+            'Rice cakes',
+          ],
+        },
+        HealthCondition.ibs: {
+          Preference.glutenFree: [
+            'Low-FODMAP gluten-free bread',
+            'Gluten-free oatcakes',
+            'Rice cakes',
+          ],
+          Preference.none: ['Sourdough bread', 'Oatcakes', 'Rice cakes'],
         },
         HealthCondition.hypertension: {
           Preference.none: [
@@ -375,14 +411,6 @@ enum KnownFood {
             'Unsalted rice cakes',
           ],
         },
-        HealthCondition.ibs: {
-          Preference.none: ['Sourdough bread', 'Oatcakes', 'Rice cakes'],
-          Preference.glutenFree: [
-            'Low-FODMAP gluten-free bread',
-            'Gluten-free oatcakes',
-            'Rice cakes',
-          ],
-        },
       },
       healthConditions: {
         HealthCondition.hypertension,
@@ -394,6 +422,17 @@ enum KnownFood {
       personalPrefs: {Preference.glutenFree},
       localNews: '',
       generalInfo: 'White toast bread is made from refined flour, so it has a high glycaemic index and little fibre, and bread is one of the largest single sources of salt in the UK diet. Portion size matters most, so it is best limited rather than avoided.',
+      nutrients: {
+        Nutrient.vitaminB6: 0.1,
+        Nutrient.calcium: 216.0,
+        Nutrient.magnesium: 28.0,
+        Nutrient.potassium: 167.0,
+        Nutrient.iron: 1.9,
+        Nutrient.zinc: 1.0,
+        Nutrient.vitaminK: 3.4,
+        Nutrient.sodium: 490.0,
+        Nutrient.folate: 30.0,
+      },
     ),
   ),
   cabbage(
@@ -409,6 +448,20 @@ enum KnownFood {
       personalPrefs: {},
       localNews: '',
       generalInfo: '',
+      nutrients: {
+        Nutrient.vitaminA: 5.0,
+        Nutrient.folate: 43.0,
+        Nutrient.vitaminK: 76.0,
+        Nutrient.sodium: 18.0,
+        Nutrient.zinc: 0.18,
+        Nutrient.vitaminE: 0.15,
+        Nutrient.iron: 0.47,
+        Nutrient.calcium: 40.0,
+        Nutrient.potassium: 170.0,
+        Nutrient.magnesium: 12.0,
+        Nutrient.vitaminB6: 0.124,
+        Nutrient.vitaminC: 36.6,
+      },
     ),
   ),
   cereal(
@@ -416,9 +469,80 @@ enum KnownFood {
     Food(
       name: 'Cereal',
       alternatives: {
-        HealthCondition.hypertension: {
+        HealthCondition.diabetes: {
           Preference.glutenFree: [
-            'certified gluten-free oatmeal (no salt)',
+            'eggs',
+            'steel-cut oats (small portion)',
+            'chia pudding with nuts',
+          ],
+          Preference.dairyFree: [
+            'eggs',
+            'steel-cut oats with plant milk',
+            'chia pudding with nuts',
+          ],
+          Preference.vegan: [
+            'steel-cut oats with plant milk',
+            'chia pudding with nuts',
+            'tofu scramble',
+          ],
+          Preference.none: [
+            'eggs',
+            'plain Greek yogurt with nuts',
+            'steel-cut oats (small portion)',
+          ],
+        },
+        HealthCondition.milkAllergy: {
+          Preference.vegan: [
+            'oats with plant milk',
+            'chia pudding',
+            'fruit and nut bowl',
+          ],
+          Preference.none: [
+            'oats with water or plant milk',
+            'scrambled eggs',
+            'fruit and nut bowl',
+          ],
+          Preference.dairyFree: [
+            'oats with plant milk',
+            'chia pudding',
+            'fruit and nut smoothie bowl',
+          ],
+          Preference.glutenFree: [
+            'certified gluten-free oats with plant milk',
+            'chia pudding',
+            'eggs',
+          ],
+        },
+        HealthCondition.lactoseIntolerance: {
+          Preference.glutenFree: [
+            'certified gluten-free oats',
+            'chia pudding',
+            'lactose-free yogurt with fruit',
+          ],
+          Preference.none: [
+            'porridge oats',
+            'lactose-free yogurt with fruit',
+            'eggs',
+          ],
+          Preference.vegan: [
+            'oats with plant milk',
+            'chia pudding',
+            'soy yogurt with fruit',
+          ],
+          Preference.dairyFree: [
+            'oats with plant milk',
+            'chia pudding',
+            'soy yogurt with fruit',
+          ],
+        },
+        HealthCondition.hypertension: {
+          Preference.vegan: [
+            'unsalted oatmeal with plant milk',
+            'fruit with unsalted nuts',
+            'chia pudding',
+          ],
+          Preference.dairyFree: [
+            'unsalted oatmeal with plant milk',
             'fruit with unsalted nuts',
             'chia pudding',
           ],
@@ -427,147 +551,76 @@ enum KnownFood {
             'fruit with unsalted nuts',
             'plain yogurt with berries',
           ],
-          Preference.vegan: [
-            'unsalted oatmeal with plant milk',
+          Preference.glutenFree: [
+            'certified gluten-free oatmeal (no salt)',
             'fruit with unsalted nuts',
             'chia pudding',
-          ],
-          Preference.dairyFree: [
-            'unsalted oatmeal with plant milk',
-            'fruit with unsalted nuts',
-            'chia pudding',
-          ],
-        },
-        HealthCondition.lactoseIntolerance: {
-          Preference.vegan: [
-            'oats with plant milk',
-            'chia pudding',
-            'soy yogurt with fruit',
-          ],
-          Preference.glutenFree: [
-            'certified gluten-free oats',
-            'chia pudding',
-            'lactose-free yogurt with fruit',
-          ],
-          Preference.dairyFree: [
-            'oats with plant milk',
-            'chia pudding',
-            'soy yogurt with fruit',
-          ],
-          Preference.none: [
-            'porridge oats',
-            'lactose-free yogurt with fruit',
-            'eggs',
-          ],
-        },
-        HealthCondition.coeliacDisease: {
-          Preference.vegan: [
-            'certified gluten-free oats',
-            'chia pudding',
-            'quinoa porridge',
-          ],
-          Preference.glutenFree: [
-            'certified gluten-free oats',
-            'quinoa flakes',
-            'buckwheat porridge',
-          ],
-          Preference.none: [
-            'certified gluten-free oats',
-            'quinoa porridge',
-            'buckwheat porridge',
-          ],
-          Preference.dairyFree: [
-            'certified gluten-free oats with plant milk',
-            'chia pudding',
-            'quinoa porridge',
           ],
         },
         HealthCondition.wheatAllergy: {
-          Preference.glutenFree: [
-            'rice porridge',
-            'chia pudding',
-            'certified gluten-free oats',
-          ],
-          Preference.vegan: [
-            'rice porridge',
-            'chia pudding',
-            'fruit and nut bowl',
-          ],
-          Preference.dairyFree: [
-            'rice porridge',
-            'chia pudding',
-            'fruit and nut smoothie bowl',
-          ],
           Preference.none: [
             'rice porridge',
             'scrambled eggs',
             'fruit with nuts',
           ],
-        },
-        HealthCondition.milkAllergy: {
+          Preference.glutenFree: [
+            'rice porridge',
+            'chia pudding',
+            'certified gluten-free oats',
+          ],
+          Preference.vegan: [
+            'rice porridge',
+            'chia pudding',
+            'fruit and nut bowl',
+          ],
           Preference.dairyFree: [
-            'oats with plant milk',
+            'rice porridge',
             'chia pudding',
             'fruit and nut smoothie bowl',
           ],
-          Preference.none: [
-            'oats with water or plant milk',
-            'scrambled eggs',
-            'fruit and nut bowl',
-          ],
-          Preference.glutenFree: [
-            'certified gluten-free oats with plant milk',
-            'chia pudding',
-            'eggs',
-          ],
+        },
+        HealthCondition.none: {
           Preference.vegan: [
             'oats with plant milk',
             'chia pudding',
-            'fruit and nut bowl',
-          ],
-        },
-        HealthCondition.diabetes: {
-          Preference.glutenFree: [
-            'eggs',
-            'steel-cut oats (small portion)',
-            'chia pudding with nuts',
-          ],
-          Preference.none: [
-            'eggs',
-            'plain Greek yogurt with nuts',
-            'steel-cut oats (small portion)',
-          ],
-          Preference.vegan: [
-            'steel-cut oats with plant milk',
-            'chia pudding with nuts',
-            'tofu scramble',
-          ],
-          Preference.dairyFree: [
-            'eggs',
-            'steel-cut oats with plant milk',
-            'chia pudding with nuts',
-          ],
-        },
-        HealthCondition.none: {
-          Preference.glutenFree: [
-            'certified gluten-free oats',
-            'chia pudding',
-            'quinoa flakes',
+            'soy yogurt with fruit',
           ],
           Preference.none: [
             'porridge oats',
             'plain Greek yogurt with fruit',
             'eggs on wholegrain toast',
           ],
+          Preference.glutenFree: [
+            'certified gluten-free oats',
+            'chia pudding',
+            'quinoa flakes',
+          ],
           Preference.dairyFree: [
             'oats with plant milk',
             'chia pudding',
             'fruit and nut smoothie bowl',
           ],
+        },
+        HealthCondition.coeliacDisease: {
+          Preference.none: [
+            'certified gluten-free oats',
+            'quinoa porridge',
+            'buckwheat porridge',
+          ],
+          Preference.glutenFree: [
+            'certified gluten-free oats',
+            'quinoa flakes',
+            'buckwheat porridge',
+          ],
           Preference.vegan: [
-            'oats with plant milk',
+            'certified gluten-free oats',
             'chia pudding',
-            'soy yogurt with fruit',
+            'quinoa porridge',
+          ],
+          Preference.dairyFree: [
+            'certified gluten-free oats with plant milk',
+            'chia pudding',
+            'quinoa porridge',
           ],
         },
       },
@@ -584,8 +637,23 @@ enum KnownFood {
         Preference.dairyFree,
         Preference.vegan,
       },
-      localNews: 'On 13-14 October 2026 Weetabix recalled specific batches of Ready Brek Original Porridge (450g and 750g) sold in UK supermarkets including Tesco and Waitrose because of the possible presence of flour beetle, making the affected batches unfit to eat. Customers are advised not to eat the affected packs and to return them for a full refund.',
+      localNews: 'Weetabix is recalling several date-coded batches of Ready Brek Original Porridge (450g, 600g and 750g packs) sold in UK supermarkets including Tesco and Waitrose, after the possible presence of flour beetle was found to make the cereal unfit to eat. The UK recall notices were issued on 13-15 October 2026 and apply nationwide, including to shops serving Coventry.',
       generalInfo: 'Many breakfast cereals, especially sweetened and highly processed ones, are high in sugar and salt, so eating them regularly can contribute to tooth decay, weight gain and raised blood pressure. Even cereals marketed as healthy can be surprisingly sugary, so labels and portion sizes should be checked.',
+      nutrients: {
+        Nutrient.iron: 12.0,
+        Nutrient.calcium: 3.0,
+        Nutrient.magnesium: 12.0,
+        Nutrient.vitaminE: 0.14,
+        Nutrient.folate: 150.0,
+        Nutrient.vitaminK: 0.1,
+        Nutrient.potassium: 88.0,
+        Nutrient.zinc: 0.2,
+        Nutrient.vitaminB6: 1.5,
+        Nutrient.vitaminD: 4.7,
+        Nutrient.vitaminB12: 1.9,
+        Nutrient.vitaminA: 21.0,
+        Nutrient.sodium: 440.0,
+      },
     ),
   ),
   chocolate(
@@ -593,101 +661,8 @@ enum KnownFood {
     Food(
       name: 'Chocolate',
       alternatives: {
-        HealthCondition.lactoseIntolerance: {
-          Preference.nutAllergy: [
-            'dairy-free dark chocolate (nut-free)',
-            'carob',
-            'sunflower seed chocolate',
-          ],
-          Preference.dairyFree: [
-            'dairy-free dark chocolate',
-            'carob',
-            'cocoa nibs',
-          ],
-          Preference.vegan: ['vegan dark chocolate', 'carob', 'cocoa nibs'],
-          Preference.none: [
-            'dark chocolate (dairy-free)',
-            'carob',
-            'lactose-free chocolate',
-          ],
-        },
-        HealthCondition.heartDisease: {
-          Preference.dairyFree: [
-            'dairy-free dark chocolate',
-            'carob',
-            'cocoa nibs',
-          ],
-          Preference.vegan: ['vegan dark chocolate', 'carob', 'cocoa nibs'],
-          Preference.nutAllergy: [
-            'dark chocolate (nut-free)',
-            'carob',
-            'cocoa nibs',
-          ],
-          Preference.none: [
-            'dark chocolate (70%+, small portion)',
-            'carob',
-            'cocoa nibs',
-          ],
-        },
-        HealthCondition.milkAllergy: {
-          Preference.none: [
-            'dairy-free dark chocolate',
-            'carob',
-            'vegan chocolate',
-          ],
-          Preference.dairyFree: [
-            'dairy-free dark chocolate',
-            'carob',
-            'cocoa nibs',
-          ],
-          Preference.nutAllergy: [
-            'dairy-free dark chocolate (nut-free)',
-            'carob',
-            'seed-based chocolate alternative',
-          ],
-          Preference.vegan: ['vegan dark chocolate', 'carob', 'cocoa nibs'],
-        },
-        HealthCondition.none: {
-          Preference.vegan: ['vegan dark chocolate', 'carob', 'cocoa nibs'],
-          Preference.dairyFree: [
-            'dark chocolate (dairy-free)',
-            'carob',
-            'vegan chocolate',
-          ],
-          Preference.nutAllergy: [
-            'nut-free chocolate chips',
-            'carob',
-            'sunflower seed butter cup',
-          ],
-          Preference.none: [
-            'dark chocolate (small portion)',
-            'carob',
-            'cocoa-dusted fruit',
-          ],
-        },
-        HealthCondition.peanutAllergy: {
-          Preference.none: [
-            'nut-free chocolate chips',
-            'carob',
-            'dark chocolate (peanut-free)',
-          ],
-          Preference.nutAllergy: [
-            'carob',
-            'sunflower seed butter cup',
-            'seed-based chocolate alternative',
-          ],
-          Preference.vegan: [
-            'vegan dark chocolate (peanut-free)',
-            'carob',
-            'sunflower seed butter cup',
-          ],
-          Preference.dairyFree: [
-            'dairy-free dark chocolate (peanut-free)',
-            'carob',
-            'sunflower seed butter cup',
-          ],
-        },
         HealthCondition.soyAllergy: {
+          Preference.none: ['soy-free dark chocolate', 'carob', 'cocoa nibs'],
           Preference.nutAllergy: [
             'soy-free dark chocolate (nut-free)',
             'carob',
@@ -703,75 +678,57 @@ enum KnownFood {
             'carob',
             'cocoa nibs',
           ],
-          Preference.none: ['soy-free dark chocolate', 'carob', 'cocoa nibs'],
         },
-        HealthCondition.ibs: {
-          Preference.none: [
+        HealthCondition.treeNutAllergy: {
+          Preference.nutAllergy: [
             'carob',
-            'small portion dark chocolate',
-            'rice-based chocolate treat',
+            'sunflower seed butter cup',
+            'seed-based chocolate alternative',
           ],
           Preference.dairyFree: [
+            'peanut butter cup (dairy-free)',
             'carob',
-            'dairy-free dark chocolate',
-            'rice milk chocolate',
+            'dairy-free dark chocolate (tree-nut-free)',
+          ],
+          Preference.none: [
+            'peanut-based chocolate treat',
+            'carob',
+            'dark chocolate (tree-nut-free)',
           ],
           Preference.vegan: [
+            'peanut butter cup (vegan)',
             'carob',
-            'vegan dark chocolate (small portion)',
-            'cocoa nibs',
+            'vegan dark chocolate (tree-nut-free)',
+          ],
+        },
+        HealthCondition.peanutAllergy: {
+          Preference.dairyFree: [
+            'dairy-free dark chocolate (peanut-free)',
+            'carob',
+            'sunflower seed butter cup',
+          ],
+          Preference.vegan: [
+            'vegan dark chocolate (peanut-free)',
+            'carob',
+            'sunflower seed butter cup',
           ],
           Preference.nutAllergy: [
             'carob',
-            'nut-free dark chocolate (small portion)',
-            'rice-based chocolate treat',
-          ],
-        },
-        HealthCondition.highCholesterol: {
-          Preference.none: [
-            'dark chocolate (70%+, small portion)',
-            'carob',
-            'unsweetened cocoa powder',
-          ],
-          Preference.vegan: [
-            'vegan dark chocolate',
-            'carob',
-            'unsweetened cocoa powder',
-          ],
-          Preference.dairyFree: [
-            'dairy-free dark chocolate',
-            'carob',
-            'unsweetened cocoa powder',
-          ],
-          Preference.nutAllergy: [
-            'dark chocolate (nut-free)',
-            'carob',
-            'unsweetened cocoa powder',
-          ],
-        },
-        HealthCondition.acidReflux: {
-          Preference.nutAllergy: [
-            'carob',
-            'vanilla treat (nut-free)',
-            'fruit-based dessert',
+            'sunflower seed butter cup',
+            'seed-based chocolate alternative',
           ],
           Preference.none: [
+            'nut-free chocolate chips',
             'carob',
-            'vanilla-flavored treat',
-            'fruit-based dessert',
-          ],
-          Preference.vegan: [
-            'carob',
-            'vanilla vegan dessert',
-            'fruit-based dessert',
-          ],
-          Preference.dairyFree: [
-            'carob',
-            'vanilla dairy-free dessert',
-            'fruit-based dessert',
+            'dark chocolate (peanut-free)',
           ],
         },
         HealthCondition.diabetes: {
+          Preference.nutAllergy: [
+            'sugar-free dark chocolate (nut-free)',
+            'unsweetened cocoa powder',
+            'carob',
+          ],
           Preference.dairyFree: [
             'sugar-free dark chocolate',
             'unsweetened cocoa powder',
@@ -787,10 +744,85 @@ enum KnownFood {
             'unsweetened cocoa powder',
             'carob',
           ],
+        },
+        HealthCondition.lactoseIntolerance: {
           Preference.nutAllergy: [
-            'sugar-free dark chocolate (nut-free)',
-            'unsweetened cocoa powder',
+            'dairy-free dark chocolate (nut-free)',
             'carob',
+            'sunflower seed chocolate',
+          ],
+          Preference.vegan: ['vegan dark chocolate', 'carob', 'cocoa nibs'],
+          Preference.dairyFree: [
+            'dairy-free dark chocolate',
+            'carob',
+            'cocoa nibs',
+          ],
+          Preference.none: [
+            'dark chocolate (dairy-free)',
+            'carob',
+            'lactose-free chocolate',
+          ],
+        },
+        HealthCondition.ibs: {
+          Preference.nutAllergy: [
+            'carob',
+            'nut-free dark chocolate (small portion)',
+            'rice-based chocolate treat',
+          ],
+          Preference.dairyFree: [
+            'carob',
+            'dairy-free dark chocolate',
+            'rice milk chocolate',
+          ],
+          Preference.none: [
+            'carob',
+            'small portion dark chocolate',
+            'rice-based chocolate treat',
+          ],
+          Preference.vegan: [
+            'carob',
+            'vegan dark chocolate (small portion)',
+            'cocoa nibs',
+          ],
+        },
+        HealthCondition.none: {
+          Preference.vegan: ['vegan dark chocolate', 'carob', 'cocoa nibs'],
+          Preference.nutAllergy: [
+            'nut-free chocolate chips',
+            'carob',
+            'sunflower seed butter cup',
+          ],
+          Preference.dairyFree: [
+            'dark chocolate (dairy-free)',
+            'carob',
+            'vegan chocolate',
+          ],
+          Preference.none: [
+            'dark chocolate (small portion)',
+            'carob',
+            'cocoa-dusted fruit',
+          ],
+        },
+        HealthCondition.highCholesterol: {
+          Preference.dairyFree: [
+            'dairy-free dark chocolate',
+            'carob',
+            'unsweetened cocoa powder',
+          ],
+          Preference.nutAllergy: [
+            'dark chocolate (nut-free)',
+            'carob',
+            'unsweetened cocoa powder',
+          ],
+          Preference.vegan: [
+            'vegan dark chocolate',
+            'carob',
+            'unsweetened cocoa powder',
+          ],
+          Preference.none: [
+            'dark chocolate (70%+, small portion)',
+            'carob',
+            'unsweetened cocoa powder',
           ],
         },
         HealthCondition.pregnancy: {
@@ -799,38 +831,74 @@ enum KnownFood {
             'carob',
             'cocoa nibs',
           ],
+          Preference.none: [
+            'dark chocolate (small portion)',
+            'carob',
+            'chocolate-fortified yogurt',
+          ],
           Preference.dairyFree: [
             'dairy-free dark chocolate',
             'carob',
             'cocoa nibs',
           ],
           Preference.vegan: ['vegan dark chocolate', 'carob', 'cocoa nibs'],
-          Preference.none: [
-            'dark chocolate (small portion)',
-            'carob',
-            'chocolate-fortified yogurt',
-          ],
         },
-        HealthCondition.treeNutAllergy: {
-          Preference.vegan: [
-            'peanut butter cup (vegan)',
+        HealthCondition.acidReflux: {
+          Preference.none: [
             'carob',
-            'vegan dark chocolate (tree-nut-free)',
+            'vanilla-flavored treat',
+            'fruit-based dessert',
+          ],
+          Preference.dairyFree: [
+            'carob',
+            'vanilla dairy-free dessert',
+            'fruit-based dessert',
+          ],
+          Preference.vegan: [
+            'carob',
+            'vanilla vegan dessert',
+            'fruit-based dessert',
           ],
           Preference.nutAllergy: [
             'carob',
-            'sunflower seed butter cup',
-            'seed-based chocolate alternative',
+            'vanilla treat (nut-free)',
+            'fruit-based dessert',
           ],
+        },
+        HealthCondition.milkAllergy: {
           Preference.dairyFree: [
-            'peanut butter cup (dairy-free)',
+            'dairy-free dark chocolate',
             'carob',
-            'dairy-free dark chocolate (tree-nut-free)',
+            'cocoa nibs',
           ],
           Preference.none: [
-            'peanut-based chocolate treat',
+            'dairy-free dark chocolate',
             'carob',
-            'dark chocolate (tree-nut-free)',
+            'vegan chocolate',
+          ],
+          Preference.vegan: ['vegan dark chocolate', 'carob', 'cocoa nibs'],
+          Preference.nutAllergy: [
+            'dairy-free dark chocolate (nut-free)',
+            'carob',
+            'seed-based chocolate alternative',
+          ],
+        },
+        HealthCondition.heartDisease: {
+          Preference.nutAllergy: [
+            'dark chocolate (nut-free)',
+            'carob',
+            'cocoa nibs',
+          ],
+          Preference.vegan: ['vegan dark chocolate', 'carob', 'cocoa nibs'],
+          Preference.dairyFree: [
+            'dairy-free dark chocolate',
+            'carob',
+            'cocoa nibs',
+          ],
+          Preference.none: [
+            'dark chocolate (70%+, small portion)',
+            'carob',
+            'cocoa nibs',
           ],
         },
       },
@@ -852,8 +920,22 @@ enum KnownFood {
         Preference.dairyFree,
         Preference.nutAllergy,
       },
-      localNews: 'On 23 October 2026 the Food Standards Agency announced that Arla Foods is recalling Arla Protein Pudding, Chocolate flavour (200g pots, several January and February 2027 best-before dates) sold across UK shops because some pots may contain glass, making them unsafe to eat. Customers should not eat the affected product and should return it for a full refund.',
+      localNews: 'Arla Foods has recalled its Arla Protein Pudding Chocolate (200g) across the UK, including supermarkets serving Coventry and the West Midlands, because the product may contain pieces of glass that make it unsafe to eat. The Food Standards Agency product recall notice was issued on 23 October 2026, and shoppers are advised not to eat packs with the affected best-before dates and to return them for a refund.',
       generalInfo: 'Chocolate is high in sugar, saturated fat and calories, so eating it frequently or in large amounts can lead to weight gain, raised cholesterol and high blood sugar; health bodies advise limiting it to occasional small portions.',
+      nutrients: {
+        Nutrient.vitaminK: 5.7,
+        Nutrient.zinc: 1.1,
+        Nutrient.sodium: 89.0,
+        Nutrient.vitaminA: 70.0,
+        Nutrient.iron: 2.05,
+        Nutrient.potassium: 451.0,
+        Nutrient.folate: 9.0,
+        Nutrient.magnesium: 57.0,
+        Nutrient.vitaminB6: 0.21,
+        Nutrient.vitaminE: 1.6,
+        Nutrient.vitaminB12: 2.1,
+        Nutrient.calcium: 226.0,
+      },
     ),
   ),
   eggs(
@@ -861,15 +943,6 @@ enum KnownFood {
     Food(
       name: 'Eggs',
       alternatives: {
-        HealthCondition.eggAllergy: {
-          Preference.none: ['applesauce', 'mashed banana', 'aquafaba'],
-          Preference.hinduism: ['paneer', 'yogurt (dahi)', 'chickpea flour'],
-          Preference.vegan: [
-            'silken tofu',
-            'flaxseed meal (flax egg)',
-            'aquafaba',
-          ],
-        },
         HealthCondition.none: {
           Preference.hinduism: ['paneer', 'tofu', 'yogurt (dahi)'],
           Preference.vegan: [
@@ -878,24 +951,47 @@ enum KnownFood {
             'chickpea flour',
           ],
         },
-        HealthCondition.pregnancy: {
-          Preference.vegan: ['cooked lentils', 'firm tofu', 'tempeh'],
-          Preference.none: [
-            'cooked lentils',
-            'cottage cheese (pasteurized)',
-            'tofu',
+        HealthCondition.eggAllergy: {
+          Preference.hinduism: ['paneer', 'yogurt (dahi)', 'chickpea flour'],
+          Preference.none: ['applesauce', 'mashed banana', 'aquafaba'],
+          Preference.vegan: [
+            'silken tofu',
+            'flaxseed meal (flax egg)',
+            'aquafaba',
           ],
+        },
+        HealthCondition.pregnancy: {
           Preference.hinduism: [
             'paneer (pasteurized milk)',
             'cooked lentils',
             'tofu',
           ],
+          Preference.none: [
+            'cooked lentils',
+            'cottage cheese (pasteurized)',
+            'tofu',
+          ],
+          Preference.vegan: ['cooked lentils', 'firm tofu', 'tempeh'],
         },
       },
       healthConditions: {HealthCondition.eggAllergy, HealthCondition.pregnancy},
       personalPrefs: {Preference.vegan, Preference.hinduism},
-      localNews: 'On 10 October 2026 the Food Standards Agency issued a Food Alert for Action after Salmonella Enteritidis was found in shell eggs imported from one Ukrainian food business (Yasensvit Ltd, stamped with egg code 3UA1012066); affected eggs, used mainly by caterers, restaurants and cafes across the UK and also sold in some small shops, are being withdrawn and recalled and consumers should not eat them, while British Lion eggs sold in major supermarkets are not affected. The related UK-wide Salmonella Enteritidis outbreak investigation linked to imported eggs is ongoing, with the latest case figures updated on 3 and 5 November 2026.',
+      localNews: 'On 10 October 2026 the Food Standards Agency issued a Food Alert for Action ordering the withdrawal and recall of all shell eggs from Yasensvit Ltd in Ukraine, stamped with code 3UA1012066, after Salmonella Enteritidis was found in them as part of a UK-wide Salmonella outbreak linked to imported eggs that has now sickened nearly 80 people in England and Wales. An outbreak update published on 2 November 2026 confirmed the affected eggs were supplied mainly through wholesalers, caterers and small shops across the UK, including England, Wales and Northern Ireland, while UK-produced supermarket eggs are unaffected.',
       generalInfo: '',
+      nutrients: {
+        Nutrient.sodium: 154.0,
+        Nutrient.vitaminE: 1.29,
+        Nutrient.zinc: 1.1,
+        Nutrient.potassium: 145.0,
+        Nutrient.vitaminB12: 2.7,
+        Nutrient.vitaminB6: 0.13,
+        Nutrient.vitaminD: 3.2,
+        Nutrient.folate: 47.0,
+        Nutrient.magnesium: 13.0,
+        Nutrient.vitaminA: 126.0,
+        Nutrient.calcium: 46.0,
+        Nutrient.iron: 1.72,
+      },
     ),
   ),
   frozenVeg(
@@ -907,6 +1003,20 @@ enum KnownFood {
       personalPrefs: {},
       localNews: '',
       generalInfo: '',
+      nutrients: {
+        Nutrient.vitaminB6: 0.1,
+        Nutrient.vitaminC: 10.4,
+        Nutrient.sodium: 47.0,
+        Nutrient.zinc: 0.45,
+        Nutrient.vitaminE: 0.38,
+        Nutrient.potassium: 212.0,
+        Nutrient.vitaminK: 24.0,
+        Nutrient.calcium: 25.0,
+        Nutrient.magnesium: 24.0,
+        Nutrient.vitaminA: 254.0,
+        Nutrient.iron: 0.95,
+        Nutrient.folate: 29.0,
+      },
     ),
   ),
   redBull(
@@ -914,21 +1024,17 @@ enum KnownFood {
     Food(
       name: 'Red Bull',
       alternatives: {
-        HealthCondition.diabetes: {
-          Preference.none: [
-            'unsweetened green tea',
-            'plain water',
-            'black coffee',
-          ],
-        },
-        HealthCondition.ibs: {
-          Preference.none: ['peppermint tea', 'ginger tea', 'water'],
-        },
         HealthCondition.hypertension: {
           Preference.none: ['herbal tea', 'water with lemon', 'beetroot juice'],
         },
         HealthCondition.heartDisease: {
           Preference.none: ['herbal tea', 'decaf coffee', 'water with lemon'],
+        },
+        HealthCondition.acidReflux: {
+          Preference.none: ['water', 'chamomile tea', 'almond milk'],
+        },
+        HealthCondition.ibs: {
+          Preference.none: ['peppermint tea', 'ginger tea', 'water'],
         },
         HealthCondition.pregnancy: {
           Preference.none: [
@@ -937,15 +1043,19 @@ enum KnownFood {
             'pasteurized orange juice',
           ],
         },
+        HealthCondition.diabetes: {
+          Preference.none: [
+            'unsweetened green tea',
+            'plain water',
+            'black coffee',
+          ],
+        },
         HealthCondition.none: {
           Preference.none: [
             'green tea',
             'coffee',
             'sparkling water with lemon',
           ],
-        },
-        HealthCondition.acidReflux: {
-          Preference.none: ['water', 'chamomile tea', 'almond milk'],
         },
       },
       healthConditions: {
@@ -957,8 +1067,18 @@ enum KnownFood {
         HealthCondition.pregnancy,
       },
       personalPrefs: {},
-      localNews: '',
+      localNews: 'Walsall Council trading standards seized counterfeit Red Bull energy drinks carrying non-English labels lacking essential safety information from shops in Aldridge and Walsall Wood in the West Midlands during inspections on 21 October 2026, a food-safety enforcement action reported on 29 October 2026, with the businesses involved still under investigation.',
       generalInfo: 'Very high in caffeine and sugar; regular or excessive consumption can raise blood pressure and heart rate, and drinking more than about four cans a day risks caffeine overdose (anxiety, rapid heart rate, sleep problems). Mixing it with alcohol adds further risk.',
+      nutrients: {
+        Nutrient.calcium: 6.0,
+        Nutrient.vitaminB6: 2.167,
+        Nutrient.zinc: 0.01,
+        Nutrient.magnesium: 19.0,
+        Nutrient.sodium: 39.0,
+        Nutrient.potassium: 3.0,
+        Nutrient.iron: 0.06,
+        Nutrient.vitaminB12: 1.97,
+      },
     ),
   ),
   robinsonsFruitShoot(
@@ -981,6 +1101,7 @@ enum KnownFood {
       personalPrefs: {},
       localNews: '',
       generalInfo: 'It is a soft drink sweetened with sucralose and acesulfame K and made acidic with citric acid, so frequent drinking—especially by children—can erode tooth enamel and encourage a lasting taste for sweet drinks; it is best kept as an occasional treat rather than a daily drink.',
+      nutrients: {Nutrient.sodium: 38.0, Nutrient.vitaminC: 6.0},
     ),
   ),
   sweetAndSaltyPopcorn(
@@ -988,15 +1109,15 @@ enum KnownFood {
     Food(
       name: 'Sweet and salty popcorn',
       alternatives: {
-        HealthCondition.heartDisease: {
+        HealthCondition.diabetes: {
           Preference.none: [
             'plain popcorn',
-            'unsalted mixed nuts',
-            'blueberries',
+            'unsalted peanuts',
+            'carrot sticks',
           ],
         },
-        HealthCondition.kidneyDisease: {
-          Preference.none: ['unsalted rice cakes', 'apple slices', 'grapes'],
+        HealthCondition.none: {
+          Preference.none: ['plain popcorn', 'rice cakes', 'apple slices'],
         },
         HealthCondition.hypertension: {
           Preference.none: [
@@ -1005,18 +1126,18 @@ enum KnownFood {
             'fresh apple',
           ],
         },
-        HealthCondition.diabetes: {
+        HealthCondition.kidneyDisease: {
+          Preference.none: ['unsalted rice cakes', 'apple slices', 'grapes'],
+        },
+        HealthCondition.heartDisease: {
           Preference.none: [
             'plain popcorn',
-            'unsalted peanuts',
-            'carrot sticks',
+            'unsalted mixed nuts',
+            'blueberries',
           ],
         },
         HealthCondition.highCholesterol: {
           Preference.none: ['plain popcorn', 'walnuts', 'oat crackers'],
-        },
-        HealthCondition.none: {
-          Preference.none: ['plain popcorn', 'rice cakes', 'apple slices'],
         },
       },
       healthConditions: {
@@ -1029,6 +1150,18 @@ enum KnownFood {
       personalPrefs: {},
       localNews: '',
       generalInfo: 'Sweet and salty popcorn is coated with added sugar and salt and can be high in saturated fat when made with oil or butter, so it is best kept as an occasional treat rather than a daily snack. A single 30g serving can already account for a noticeable share of daily sugar, salt and saturated fat limits.',
+      nutrients: {
+        Nutrient.vitaminK: 5.8,
+        Nutrient.sodium: 1600.0,
+        Nutrient.zinc: 1.2,
+        Nutrient.iron: 2.0,
+        Nutrient.vitaminE: 2.9,
+        Nutrient.calcium: 26.0,
+        Nutrient.vitaminB6: 0.3,
+        Nutrient.folate: 69.0,
+        Nutrient.magnesium: 61.0,
+        Nutrient.potassium: 197.0,
+      },
     ),
   );
 

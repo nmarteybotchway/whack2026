@@ -4,30 +4,13 @@ import '../theme.dart';
 import 'diet_window_service.dart';
 import 'nutrient_insights.dart';
 import 'nutrition_service.dart';
-import 'receipt_store.dart';
 
 /// Longest range the tracker offers: receipt days are only kept for the
 /// [DietWindowService] window.
 final _maxDays = DietWindowService.window.inDays;
 
-/// Receipt days from the sliding window plus foods logged through the
-/// assistant, combined per day.
-Future<NutrientInsights> _loadInsights(String userId, int days) async {
-  final now = DateTime.now();
-  final start = DateTime(now.year, now.month, now.day - (days - 1));
-  final results = await Future.wait([
-    DietWindowService(userId).recentDays(),
-    ReceiptStore(userId).loggedIntakeSince(start),
-  ]);
-  final receiptDays = results[0] as List<DietDay>;
-  final intake = results[1] as Map<DateTime, Map<String, double>>;
-  for (final day in receiptDays) {
-    if (day.date.isBefore(start)) continue;
-    final into = intake.putIfAbsent(day.date, () => {});
-    day.nutrition.forEach((k, v) => into[k] = (into[k] ?? 0) + v);
-  }
-  return NutrientInsights.fromDaily(intake, today: now, days: days);
-}
+Future<NutrientInsights> _loadInsights(String userId, int days) =>
+    NutrientInsights.load(userId, days: days);
 
 /// Historical vitamins and minerals tracker: averages what the user's
 /// receipts and logged meals provide per day and highlights what they are

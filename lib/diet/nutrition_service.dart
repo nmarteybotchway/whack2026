@@ -3,31 +3,15 @@ import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:http/http.dart' as http;
 
+import '../food/nutrient.dart';
 import '../secrets.dart' show usdaApiKey;
 
-/// The nutrients we track, as shorthand keys used in Firestore and the UI.
-///
-/// Element shorthands follow the periodic table (CA calcium, NA sodium, ...);
-/// vitamins are prefixed VIT so vitamin K never collides with potassium K.
-/// Every nutrient has one standard unit its values are normalised to before
-/// being summed and stored.
-const nutrientUnits = <String, String>{
-  'CA': 'MG',
-  'NA': 'MG',
-  'FE': 'MG',
-  'K': 'MG',
-  'MG': 'MG',
-  'ZN': 'MG',
-  'VITA': 'UG',
-  'VITB6': 'MG',
-  'VITB12': 'UG',
-  'VITC': 'MG',
-  'VITD': 'UG',
-  'VITE': 'MG',
-  'VITK': 'UG',
-  'FOL': 'UG',
+/// The nutrients we track, as shorthand keys used in Firestore and the UI,
+/// mapped to the standard unit values are normalised to before being summed
+/// and stored. See [Nutrient] for what each shorthand means.
+final nutrientUnits = <String, String>{
+  for (final n in Nutrient.values) n.id: n.unit,
 };
-
 /// Looks up vitamins and minerals for a food via the USDA FoodData Central
 /// search API, with a shared Firestore cache so repeat scans of the same
 /// food cost no quota.
