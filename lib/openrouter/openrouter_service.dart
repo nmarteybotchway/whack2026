@@ -58,7 +58,7 @@ class OpenRouterService {
     'https://openrouter.ai/api/v1/chat/completions',
   );
 
-  final String _apiKey;
+  final String apiKey;
   final String model;
   final http.Client _client;
 
@@ -69,7 +69,7 @@ class OpenRouterService {
   /// [model] defaults to the `@preset/glm-flash` OpenRouter preset. [client]
   /// can be replaced in tests.
   OpenRouterService({
-    this._apiKey = openRouterApiKey,
+    this.apiKey = openRouterApiKey,
     this.model = '@preset/glm-flash',
     http.Client? client,
   }) : _client = client ?? http.Client();
@@ -104,7 +104,7 @@ class OpenRouterService {
         .post(
           _endpoint,
           headers: {
-            'Authorization': 'Bearer $_apiKey',
+            'Authorization': 'Bearer $apiKey',
             'Content-Type': 'application/json',
           },
           body: jsonEncode({
@@ -155,6 +155,56 @@ class OpenRouterService {
       throw StateError('OpenRouter returned no text content.');
     }
     return text;
+  }
+
+  /// Sends raw OpenAI-compatible chat messages and tool definitions. The
+  /// returned assistant message may contain text, tool calls, or both.
+  Future<Map<String, dynamic>> chat({
+    required List<Map<String, dynamic>> messages,
+    List<Map<String, dynamic>> tools = const [],
+    Duration timeout = const Duration(seconds: 45),
+  }) async {
+    final response = await _client
+        .post(
+          _endpoint,
+          headers: {
+            'Authorization': 'Bearer $apiKey',
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({
+            'model': model,
+            'messages': messages,
+            if (tools.isNotEmpty) 'tools': tools,
+          }),
+        )
+        .timeout(timeout);
+    final dynamic body;
+    try {
+      body = jsonDecode(utf8.decode(response.bodyBytes));
+    } on FormatException {
+      throw OpenRouterException(
+        response.statusCode,
+        'OpenRouter returned a non-JSON response.',
+      );
+    }
+    if (response.statusCode != 200 || body is! Map || body['error'] != null) {
+      final error = body is Map ? body['error'] : null;
+      throw OpenRouterException(
+        error is Map
+            ? error['code'] as int? ?? response.statusCode
+            : response.statusCode,
+        error is Map ? '${error['message']}' : 'OpenRouter request failed.',
+      );
+    }
+    final choices = body['choices'];
+    final message =
+        choices is List && choices.isNotEmpty && choices.first is Map
+        ? choices.first['message']
+        : null;
+    if (message is! Map) {
+      throw StateError('OpenRouter returned no assistant message.');
+    }
+    return Map<String, dynamic>.from(message);
   }
 
   /// Closes the underlying HTTP client.

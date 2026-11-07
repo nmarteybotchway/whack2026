@@ -25,6 +25,105 @@ service cloud.firestore {
             (request.resource.data.heightCm * request.resource.data.heightCm)) + 0.000001
         && request.resource.data.updatedAt == request.time;
     }
+    match /users/{uid} {
+      allow read: if owner(uid);
+      allow create: if owner(uid)
+        && request.resource.data.keys().hasOnly([
+          'religion', 'dietary', 'health_conditions', 'updatedAt'
+        ])
+        && (!('religion' in request.resource.data) || request.resource.data.religion is list)
+        && (!('dietary' in request.resource.data) || request.resource.data.dietary is list)
+        && (!('health_conditions' in request.resource.data) || request.resource.data.health_conditions is list)
+        && (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt == request.time);
+      allow update: if owner(uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'religion', 'dietary', 'health_conditions', 'updatedAt'
+        ])
+        && (!('religion' in request.resource.data) || request.resource.data.religion is list)
+        && (!('dietary' in request.resource.data) || request.resource.data.dietary is list)
+        && (!('health_conditions' in request.resource.data) || request.resource.data.health_conditions is list)
+        && (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt == request.time);
+    }
+    match /users/{uid}/healthData/{recordId} {
+      allow read, delete: if owner(uid);
+      allow create, update: if owner(uid) && recordId == 'latest'
+        && request.resource.data.keys().hasOnly([
+          'heartRateBpm', 'steps', 'sleepMinutes', 'weightKg',
+          'systolicMmHg', 'diastolicMmHg', 'updatedAt', 'optedIn'
+        ])
+        && (!('heartRateBpm' in request.resource.data) || request.resource.data.heartRateBpm is number)
+        && (!('steps' in request.resource.data) || request.resource.data.steps is number)
+        && (!('sleepMinutes' in request.resource.data) || request.resource.data.sleepMinutes is number)
+        && (!('weightKg' in request.resource.data) || request.resource.data.weightKg is number)
+        && (!('systolicMmHg' in request.resource.data) || request.resource.data.systolicMmHg is number)
+        && (!('diastolicMmHg' in request.resource.data) || request.resource.data.diastolicMmHg is number)
+        && (!('optedIn' in request.resource.data) || request.resource.data.optedIn is bool)
+        && (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt == request.time);
+    }
+    match /users/{uid}/assistantSettings/{settingId} {
+      allow read, delete: if owner(uid);
+      allow create, update: if owner(uid) && settingId == 'preferences'
+        && request.resource.data.keys().hasAll([
+          'schemaVersion', 'name', 'tone', 'answerLength', 'supportive',
+          'humor', 'instructions', 'voiceEnabled', 'locale', 'speechRate',
+          'voiceName', 'updatedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'schemaVersion', 'name', 'tone', 'answerLength', 'supportive',
+          'humor', 'instructions', 'voiceEnabled', 'locale', 'speechRate',
+          'voiceName', 'updatedAt'
+        ])
+        && request.resource.data.schemaVersion == 1
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 40
+        && request.resource.data.tone in ['Friendly coach', 'Calm guide', 'Direct assistant']
+        && request.resource.data.answerLength in ['short', 'balanced', 'detailed']
+        && request.resource.data.supportive is bool
+        && request.resource.data.humor is bool
+        && request.resource.data.instructions is string
+        && request.resource.data.instructions.size() <= 1000
+        && request.resource.data.voiceEnabled is bool
+        && request.resource.data.locale is string
+        && request.resource.data.locale.size() <= 30
+        && request.resource.data.speechRate is number
+        && request.resource.data.speechRate >= 0.2
+        && request.resource.data.speechRate <= 0.8
+        && request.resource.data.voiceName is string
+        && request.resource.data.voiceName.size() <= 100
+        && request.resource.data.updatedAt == request.time;
+    }
+    match /users/{uid}/assistantActions/{actionId} {
+      allow read: if owner(uid);
+      allow create: if owner(uid)
+        && request.resource.data.keys().hasAll(['toolName', 'summary', 'result', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['toolName', 'summary', 'result', 'createdAt'])
+        && request.resource.data.toolName in ['propose_preference_change', 'propose_food_log']
+        && request.resource.data.summary is string
+        && request.resource.data.summary.size() <= 300
+        && request.resource.data.result is map
+        && request.resource.data.createdAt == request.time;
+      allow update, delete: if false;
+    }
+    match /users/{uid}/foodEntries/{entryId} {
+      allow read, delete: if owner(uid);
+      allow create: if owner(uid)
+        && request.resource.data.keys().hasAll([
+          'name', 'localDate', 'localDay', 'kind', 'source', 'createdAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'name', 'localDate', 'localDay', 'kind', 'source', 'createdAt', 'amount'
+        ])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 120
+        && request.resource.data.localDate is timestamp
+        && request.resource.data.localDay is string
+        && request.resource.data.kind in ['eaten', 'purchased']
+        && request.resource.data.source == 'assistant'
+        && request.resource.data.createdAt == request.time
+        && (!('amount' in request.resource.data) || (request.resource.data.amount is string && request.resource.data.amount.size() <= 80));
+      allow update: if false;
+    }
     match /users/{uid}/bloodPressure/{recordId} {
       allow read, delete: if owner(uid);
       allow create, update: if owner(uid)

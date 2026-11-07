@@ -13,21 +13,29 @@ class DietHistoryPage extends StatelessWidget {
 
   Future<void> _scan(BuildContext context) async {
     if (!ReceiptScanPage.isSupported) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Receipt scanning is only supported on Android and iOS.'),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Receipt scanning is only supported on Android and iOS.',
+          ),
+        ),
+      );
       return;
     }
     final saved = await Navigator.of(context).push<int>(
       MaterialPageRoute(builder: (_) => ReceiptScanPage(userId: userId)),
     );
     if (saved == null || saved == 0 || !context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Saved $saved foods to your diet.')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Saved $saved foods to your diet.')));
   }
 
-  Future<void> _delete(BuildContext context, ReceiptStore store, String id) async {
+  Future<void> _delete(
+    BuildContext context,
+    ReceiptStore store,
+    String id,
+  ) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -52,9 +60,11 @@ class DietHistoryPage extends StatelessWidget {
       await store.delete(id);
     } catch (_) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Could not delete. Check your connection and retry.'),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not delete. Check your connection and retry.'),
+          ),
+        );
       }
     }
   }
@@ -92,12 +102,16 @@ class DietHistoryPage extends StatelessWidget {
               return const Center(child: CircularProgressIndicator());
             }
             final docs = snapshot.data!.docs;
-            if (docs.isEmpty) return const Text('No foods tracked yet. Scan a receipt to start.');
             return Column(
               crossAxisAlignment: .stretch,
               children: [
                 if (snapshot.data!.metadata.isFromCache)
                   const Text('Saved diet (cached)'),
+                if (docs.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Text('No receipt purchases tracked yet.'),
+                  ),
                 for (final doc in docs)
                   _DayCard(
                     data: doc.data(),
@@ -107,7 +121,71 @@ class DietHistoryPage extends StatelessWidget {
             );
           },
         ),
+        const SizedBox(height: 20),
+        Text('Manual food logs', style: theme.textTheme.titleLarge),
+        const SizedBox(height: 4),
+        const Text(
+          'Foods you logged as eaten or purchased. These stay separate from receipt totals.',
+        ),
+        const SizedBox(height: 8),
+        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: FirebaseFirestore.instance
+              .collection('users')
+              .doc(userId)
+              .collection('foodEntries')
+              .orderBy('localDate', descending: true)
+              .limit(100)
+              .snapshots(),
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return const Text('Cannot load manual food logs.');
+            }
+            if (!snapshot.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            final docs = snapshot.data!.docs;
+            if (docs.isEmpty) return const Text('No manual food logs yet.');
+            return Column(
+              children: [
+                for (final doc in docs) _ManualEntryCard(data: doc.data()),
+              ],
+            );
+          },
+        ),
       ],
+    );
+  }
+}
+
+class _ManualEntryCard extends StatelessWidget {
+  const _ManualEntryCard({required this.data});
+
+  final Map<String, dynamic> data;
+
+  @override
+  Widget build(BuildContext context) {
+    final localDay = data['localDay'];
+    final date = localDay is String
+        ? DateTime.tryParse(localDay)
+        : (data['localDate'] as Timestamp?)?.toDate().toLocal();
+    final kind = data['kind'] == 'eaten' ? 'Eaten' : 'Purchased';
+    final amount = data['amount'];
+    return Card(
+      child: ListTile(
+        leading: Icon(
+          data['kind'] == 'eaten'
+              ? Icons.restaurant
+              : Icons.shopping_bag_outlined,
+        ),
+        title: Text(data['name'] as String? ?? 'Food'),
+        subtitle: Text(
+          [
+            kind,
+            if (amount is String && amount.isNotEmpty) amount,
+            if (date != null) _formatDay(date),
+          ].join(' · '),
+        ),
+      ),
     );
   }
 }
@@ -163,10 +241,7 @@ class _DayCard extends StatelessWidget {
                   runSpacing: 6,
                   children: [
                     for (final entry in nutrition.entries)
-                      _NutrientBox(
-                        shorthand: entry.key,
-                        value: entry.value,
-                      ),
+                      _NutrientBox(shorthand: entry.key, value: entry.value),
                   ],
                 ),
               ),

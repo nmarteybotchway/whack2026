@@ -4,6 +4,10 @@
 <dict>
 	<key>NSCameraUsageDescription</key>
 	<string>The camera is used to scan and analyse items.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Use your microphone to speak to your shopping assistant.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Convert your spoken requests into messages for your shopping assistant.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
