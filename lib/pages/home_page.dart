@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../diet/diet_history_page.dart';
+import '../garden/nutrient_garden.dart';
 import '../health_data/health_tracking_controller.dart';
 import '../health_data/health_tracking_card.dart';
 import '../scan/scan_page.dart';
@@ -207,6 +208,10 @@ class _HomeTab extends StatelessWidget {
         Text('Hi, $name', style: theme.textTheme.headlineSmall),
         const SizedBox(height: 4),
         Text('UID: ${user.uid}', style: theme.textTheme.bodySmall),
+        const SizedBox(height: 16),
+        // TODO: feed from NutrientScoreService once diet history is wired;
+        // 0.62 stands in for a decent-but-not-perfect diet.
+        const NutrientGarden(progress: 0.62),
       ],
     );
   }

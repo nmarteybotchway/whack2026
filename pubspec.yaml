@@ -43,6 +43,7 @@ dependencies:
   http: ^1.6.0
   crypto: ^3.0.8
   speech_to_text: ^7.5.0
+  rive: ^0.14.11
 
 dev_dependencies:
   flutter_test:
@@ -68,6 +69,7 @@ flutter:
 
   assets:
     - assets/tesco_stores.json
+    - assets/rive/tree_demo.riv
 
   # To add assets to your application, add an assets section, like this:
   # assets:
