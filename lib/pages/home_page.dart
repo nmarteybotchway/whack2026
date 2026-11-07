@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../health_data/blood_pressure_page.dart';
 import '../scan/scan_page.dart';
+import '../services/text_to_speech_service.dart';
 
 /// Mock home page shown once a Firebase user is signed in.
 class HomePage extends StatefulWidget {
@@ -36,6 +37,21 @@ const _tabs = [..._leftTabs, ..._rightTabs];
 
 class _HomePageState extends State<HomePage> {
   int _index = 0;
+  final _textToSpeech = TextToSpeechService();
+
+  Future<void> _speakDemo() async {
+    try {
+      await _textToSpeech.speak(
+        'Hello! This is a demo of text to speech on your Android phone.',
+        locale: 'en-GB',
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not speak the demo text: $error')),
+      );
+    }
+  }
 
   void _scan() {
     Navigator.of(context)
@@ -58,9 +74,12 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
       body: _index == 0
-          ? _HomeTab(user: widget.user)
+          ? _HomeTab(user: widget.user, onSpeakDemo: _speakDemo)
           : _index == 2
-          ? BloodPressurePage(key: ValueKey(widget.user.uid), userId: widget.user.uid)
+          ? BloodPressurePage(
+              key: ValueKey(widget.user.uid),
+              userId: widget.user.uid,
+            )
           : _PlaceholderTab(tab: _tabs[_index]),
       bottomNavigationBar: _BottomBar(
         index: _index,
@@ -170,9 +189,10 @@ class _ScanButton extends StatelessWidget {
 }
 
 class _HomeTab extends StatelessWidget {
-  const _HomeTab({required this.user});
+  const _HomeTab({required this.user, required this.onSpeakDemo});
 
   final User user;
+  final VoidCallback onSpeakDemo;
 
   @override
   Widget build(BuildContext context) {
@@ -188,10 +208,15 @@ class _HomeTab extends StatelessWidget {
         for (var i = 1; i <= 5; i++)
           Card(
             child: ListTile(
-              leading: CircleAvatar(child: Text('$i')),
-              title: Text('Placeholder item $i'),
-              subtitle: const Text('Mock content'),
-              trailing: const Icon(Icons.chevron_right),
+              leading: CircleAvatar(
+                child: i == 1 ? const Icon(Icons.volume_up) : Text('$i'),
+              ),
+              title: Text(
+                i == 1 ? 'Text-to-speech demo' : 'Placeholder item $i',
+              ),
+              subtitle: Text(i == 1 ? 'Tap to hear a sample' : 'Mock content'),
+              trailing: Icon(i == 1 ? Icons.play_arrow : Icons.chevron_right),
+              onTap: i == 1 ? onSpeakDemo : null,
             ),
           ),
       ],
