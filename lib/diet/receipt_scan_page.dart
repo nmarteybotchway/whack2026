@@ -6,6 +6,7 @@ import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart
 import 'receipt_parser.dart';
 import 'receipt_review_sheet.dart';
 import 'receipt_store.dart';
+import 'veryfi_service.dart';
 
 /// Camera page that photographs a receipt, reads it with the on-device ML Kit
 /// text recogniser, and stores the items in the user's Firestore account.
@@ -120,12 +121,13 @@ class _ReceiptScanPageState extends State<ReceiptScanPage>
         return;
       }
 
-      final reviewed = await showReceiptReview(context, items);
-      if (reviewed == null || reviewed.isEmpty || !mounted) return;
 
-      await ReceiptStore(widget.userId).save(reviewed);
+      final reviewed = await showReceiptReview(context, items);
+      if (reviewed == null || reviewed.items.isEmpty || !mounted) return;
+
+      await ReceiptStore(widget.userId).save(reviewed.items, reviewed.day);
       if (!mounted) return;
-      Navigator.of(context).pop(reviewed.length);
+      Navigator.of(context).pop(reviewed.items.length);
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
@@ -133,9 +135,24 @@ class _ReceiptScanPageState extends State<ReceiptScanPage>
     }
   }
 
+  /// Reads the receipt photo into items. Veryfi's API does the OCR and
+  /// understanding in one step; if it is unavailable (no network, out of
+  /// credits, bad credentials) the on-device ML Kit fallback takes over.
+  Future<List<ReceiptItem>> _recognise(XFile photo) async {
+    final bytes = await photo.readAsBytes();
+    try {
+      final items = await VeryfiService()
+          .processReceipt(bytes, 'receipt-${DateTime.now().millisecondsSinceEpoch}.jpg');
+      if (items.isNotEmpty) return items;
+    } on Exception catch (e) {
+      debugPrint('Veryfi failed, falling back to ML Kit: $e');
+    }
+    return _recogniseLocally(photo);
+  }
+
   /// Runs the on-device ML Kit text recogniser over the photo and parses the
   /// receipt text into items.
-  Future<List<ReceiptItem>> _recognise(XFile photo) async {
+  Future<List<ReceiptItem>> _recogniseLocally(XFile photo) async {
     final inputImage = InputImage.fromFilePath(photo.path);
     final recognizer = TextRecognizer(script: TextRecognitionScript.latin);
     try {

@@ -79,10 +79,16 @@ class OpenRouterService {
   ///
   /// If [responseSchema] (a JSON Schema object) is given, the model is asked
   /// to reply with JSON matching it, and the returned string is that JSON.
+  ///
+  /// If [webSearch] is true, OpenRouter's web plugin adds live search results
+  /// to the prompt (billed per request on top of the model's tokens). Such
+  /// calls can take minutes, so raise [timeout] to match.
   Future<String> generate({
     required String prompt,
     Map<String, Object?>? responseSchema,
     OpenRouterImage? image,
+    bool webSearch = false,
+    Duration timeout = const Duration(seconds: 45),
   }) async {
     final content = image == null
         ? prompt
@@ -106,6 +112,10 @@ class OpenRouterService {
             'messages': [
               {'role': 'user', 'content': content},
             ],
+            if (webSearch)
+              'plugins': [
+                {'id': 'web'},
+              ],
             if (responseSchema != null)
               'provider': {'require_parameters': true},
             if (responseSchema != null)
@@ -119,7 +129,7 @@ class OpenRouterService {
               },
           }),
         )
-        .timeout(const Duration(seconds: 45));
+        .timeout(timeout);
 
     final dynamic body;
     try {

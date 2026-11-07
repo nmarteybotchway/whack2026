@@ -2,15 +2,25 @@ import 'package:flutter/material.dart';
 
 import 'receipt_parser.dart';
 
-/// Shows the items parsed from a scanned receipt for review.
+/// Result of reviewing a scanned receipt: the confirmed items and the day
+/// they were bought.
+class ReviewedReceipt {
+  const ReviewedReceipt({required this.items, required this.day});
+
+  final List<ReceiptItem> items;
+  final DateTime day;
+}
+
+/// Shows the items parsed from a scanned receipt for review, then asks for
+/// the purchase date (defaulting to today).
 ///
-/// Resolves to the final item list when the user saves, or null when they
+/// Resolves to a [ReviewedReceipt] when the user saves, or null when they
 /// want to retake the photo.
-Future<List<ReceiptItem>?> showReceiptReview(
+Future<ReviewedReceipt?> showReceiptReview(
   BuildContext context,
   List<ReceiptItem> items,
 ) {
-  return showModalBottomSheet<List<ReceiptItem>>(
+  return showModalBottomSheet<ReviewedReceipt>(
     context: context,
     showDragHandle: true,
     isScrollControlled: true,
@@ -30,8 +40,22 @@ class ReceiptReviewSheet extends StatefulWidget {
 
 class _ReceiptReviewSheetState extends State<ReceiptReviewSheet> {
   late final List<ReceiptItem> _items = List.of(widget.items);
+  DateTime _day = DateTime.now();
 
-  double get _total => _items.fold<double>(0, (sum, item) => sum + item.lineTotal);
+  bool get _isToday {
+    final now = DateTime.now();
+    return _day.year == now.year && _day.month == now.month && _day.day == now.day;
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _day,
+      firstDate: DateTime.now().subtract(const Duration(days: 365)),
+      lastDate: DateTime.now(),
+    );
+    if (picked != null) setState(() => _day = picked);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -46,8 +70,8 @@ class _ReceiptReviewSheetState extends State<ReceiptReviewSheet> {
             Text('Receipt items', style: theme.textTheme.titleLarge),
             const SizedBox(height: 4),
             Text(
-              'Check what was read from your receipt. Remove anything that '
-              'looks wrong, then save.',
+              'Is this everything you bought? Remove anything that looks '
+              'wrong, then save.',
               style: theme.textTheme.bodySmall,
             ),
             const SizedBox(height: 8),
@@ -62,23 +86,31 @@ class _ReceiptReviewSheetState extends State<ReceiptReviewSheet> {
                 onRemove: () => setState(() => _items.removeAt(i)),
               ),
             const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: .spaceBetween,
-              children: [
-                Text('Total', style: theme.textTheme.titleMedium),
-                Text(
-                  _total.toStringAsFixed(2),
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.event),
+                title: const Text('When did you get this?'),
+                subtitle: Text(
+                  _isToday
+                      ? 'Today (tap to change)'
+                      : _formatDay(_day),
                 ),
-              ],
+                trailing: const Icon(Icons.edit_calendar),
+                onTap: _pickDate,
+              ),
             ),
             const SizedBox(height: 16),
             FilledButton(
-              onPressed: _items.isEmpty ? null : () => Navigator.pop(context, _items),
+              onPressed: _items.isEmpty
+                  ? null
+                  : () => Navigator.pop(
+                      context,
+                      ReviewedReceipt(items: _items, day: _day),
+                    ),
               child: Text(
-                _items.isEmpty ? 'No items to save' : 'Save ${_items.length} items',
+                _items.isEmpty
+                    ? 'No items to save'
+                    : 'Save ${_items.length} items',
               ),
             ),
             TextButton(
@@ -92,6 +124,11 @@ class _ReceiptReviewSheetState extends State<ReceiptReviewSheet> {
   }
 }
 
+String _formatDay(DateTime day) {
+  String two(int value) => value.toString().padLeft(2, '0');
+  return '${day.year}-${two(day.month)}-${two(day.day)}';
+}
+
 class _ItemTile extends StatelessWidget {
   const _ItemTile({required this.item, required this.onRemove});
 
@@ -100,25 +137,13 @@ class _ItemTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final quantity = item.quantity;
     return ListTile(
       contentPadding: EdgeInsets.zero,
       title: Text(item.name),
-      subtitle: quantity > 1 ? Text('Qty $quantity × ${item.price.toStringAsFixed(2)}') : null,
-      trailing: Row(
-        mainAxisSize: .min,
-        children: [
-          Text(
-            item.lineTotal.toStringAsFixed(2),
-            style: theme.textTheme.bodyLarge,
-          ),
-          IconButton(
-            tooltip: 'Remove item',
-            icon: const Icon(Icons.delete_outline),
-            onPressed: onRemove,
-          ),
-        ],
+      trailing: IconButton(
+        tooltip: 'Remove item',
+        icon: const Icon(Icons.delete_outline),
+        onPressed: onRemove,
       ),
     );
   }

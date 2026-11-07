@@ -36,10 +36,22 @@ final _skipLine = RegExp(
 );
 
 /// A line that is nothing but a price, e.g. "2.49" or "$12.90-".
-final _priceOnly = RegExp(r'^[$€£]?\s*(\d{1,5})[.,](\d{2})\s*-?$');
+///
+/// OCR often keeps the tax flag receipts print after the price ("2.49 F"),
+/// so a single trailing flag letter is tolerated.
+final _priceOnly = RegExp(r'^[$€£]?\s*(\d{1,5})[.,](\d{2})\s*-?[A-Za-z]?$');
 
-/// A name and a price on the same line, e.g. "WHOLE MILK 2.49".
-final _nameAndPrice = RegExp(r'^(.+?)\s*(?:[$€£]\s*)?(\d{1,5})[.,](\d{2})\s*-?$');
+/// A name and a price on the same line, e.g. "WHOLE MILK 2.49" or the
+/// space-less "MILK2.49" some OCR runs produce.
+final _nameAndPrice = RegExp(
+  r'^(.+?)(?:\s*|\s)(?:[$€£]\s*)?(\d{1,5})[.,](\d{2})\s*-?[A-Za-z]?$',
+);
+
+/// "MILK 2 @ 1.50 3.00": unit price with a quantity, and an optional line
+/// total after it.
+final _qtyAtUnitPrice = RegExp(
+  r'^(.+?)\s+(\d{1,3})\s*@\s*[$€£]?(\d{1,5})[.,](\d{2})(?:\s+[$€£]?\d{1,5}[.,]\d{2})?\s*$',
+);
 
 /// A leading quantity, e.g. "2 X WHOLE MILK" or "3 @ 1.20".
 final _qtyPrefix = RegExp(r'^(\d{1,3})\s*[xX*@]\s*(.+)$');
@@ -95,6 +107,15 @@ List<ReceiptItem> parseReceiptItems(String text) {
         pendingName = null;
         pendingQty = 1;
       }
+      continue;
+    }
+
+    final atUnit = _qtyAtUnitPrice.firstMatch(rest);
+    if (atUnit != null) {
+      final price = _toPrice(atUnit.group(3)!, atUnit.group(4)!);
+      complete(atUnit.group(1)!, price, int.parse(atUnit.group(2)!));
+      pendingName = null;
+      pendingQty = 1;
       continue;
     }
 
