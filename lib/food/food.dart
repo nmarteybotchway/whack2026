@@ -1,4 +1,5 @@
 import 'health_condition.dart';
+import 'nutrient.dart';
 import 'preference.dart';
 
 /// A food entry stored in Firestore at `food/{foodId}`.
@@ -18,6 +19,10 @@ import 'preference.dart';
 ///   "hypertension": {"none": ["Grilled chicken"], "vegan": ["Tofu"]}
 /// }
 /// ```
+///
+/// `nutrients` maps [Nutrient.id]s to the amount per 100 g in each
+/// nutrient's [Nutrient.unit], e.g. `{"VITC": 53.2, "K": 184}`. It is
+/// optional, so foods stored before it existed simply have none.
 class Food {
   const Food({
     required this.name,
@@ -26,6 +31,7 @@ class Food {
     this.personalPrefs = const {},
     this.localNews = '',
     this.generalInfo = '',
+    this.nutrients = const {},
   });
 
   /// Display name, e.g. `Peanut Butter`; stored as `food`.
@@ -52,17 +58,35 @@ class Food {
   /// is a processed meat high in salt); empty when the food is fine.
   final String generalInfo;
 
+  /// Vitamins and minerals per 100 g, in each [Nutrient.unit]; nutrients
+  /// that are absent are unknown or negligible.
+  final Map<Nutrient, double> nutrients;
+
   bool get hasNews => localNews.isNotEmpty;
+
+  /// Nutrients this food is a source of ([Nutrient.sourceThreshold]).
+  Set<Nutrient> get richIn => {
+    for (final MapEntry(key: n, value: amount) in nutrients.entries)
+      if (n.sourceThreshold case final t? when amount >= t) n,
+  };
+
+  /// Nutrients to limit that this food is high in ([Nutrient.highThreshold]).
+  Set<Nutrient> get highIn => {
+    for (final MapEntry(key: n, value: amount) in nutrients.entries)
+      if (n.highThreshold case final t? when amount >= t) n,
+  };
 
   /// Substitutes for a person with [conditions] and [prefs].
   ///
   /// Looks up every pair of their conditions and preferences that this food
   /// has alternatives for, using `none` on a side where none of theirs
   /// apply, and ranks substitutes that suit more pairs first. Empty when the
-  /// food is fine for them.
+  /// food is fine for them. [tieBreak] orders substitutes that suit the
+  /// same number of pairs, e.g. by the nutrients the person is low on.
   List<String> alternativesFor({
     Set<HealthCondition> conditions = const {},
     Set<Preference> prefs = const {},
+    Comparator<String>? tieBreak,
   }) {
     final matched = conditions.where(alternatives.containsKey);
     final lists = <List<String>>[];
@@ -81,7 +105,10 @@ class Food {
       }
     }
     // Stable sort keeps each list's own order among equally ranked items.
-    return votes.keys.toList()..sort((a, b) => votes[b]! - votes[a]!);
+    return votes.keys.toList()..sort((a, b) {
+      final byVotes = votes[b]! - votes[a]!;
+      return byVotes != 0 || tieBreak == null ? byVotes : tieBreak(a, b);
+    });
   }
 
   /// Document ID for [name]: lower-cased, trimmed, and with whitespace and
@@ -91,8 +118,9 @@ class Food {
 
   String get id => idFor(name);
 
-  /// Unknown condition and preference IDs are skipped so older clients
-  /// tolerate new ones, as are alternatives in an older, non-nested format.
+  /// Unknown condition, preference and nutrient IDs are skipped so older
+  /// clients tolerate new ones, as are alternatives in an older, non-nested
+  /// format.
   factory Food.fromMap(Map<String, dynamic> data) => Food(
     name: data['food'] as String,
     alternatives: {
@@ -120,6 +148,7 @@ class Food {
     },
     localNews: data['local_news'] as String? ?? '',
     generalInfo: data['general_info'] as String? ?? '',
+    nutrients: Nutrient.parseAmounts(data['nutrients']),
   );
 
   Map<String, dynamic> toMap() => {
@@ -134,5 +163,8 @@ class Food {
     'personal_prefs': [for (final p in personalPrefs) p.id],
     'local_news': localNews,
     'general_info': generalInfo,
+    'nutrients': {
+      for (final MapEntry(:key, :value) in nutrients.entries) key.id: value,
+    },
   };
 }

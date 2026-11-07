@@ -1,42 +1,40 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../appearance/appearance_page.dart';
+import '../assistant/assistant_controller.dart';
+import '../assistant/assistant_settings_page.dart';
 import '../food/health_condition.dart';
+import '../food/preference.dart';
 import '../health_data/body_measurements_card.dart';
 import '../health_data/health_data_card.dart';
 import '../health_data/health_tracking_controller.dart';
 
-/// Common religious beliefs offered as quick-pick options.
-const _religionOptions = [
-  'Christianity',
-  'Islam',
-  'Judaism',
-  'Hinduism',
-  'Buddhism',
-  'Sikhism',
-  'Atheist',
-  'Agnostic',
+/// Religion options: every [Preference.religions] label, then beliefs with
+/// no food rules.
+final _religionOptions = [
+  for (final p in Preference.religions) p.label,
+  ...Preference.otherBeliefs,
 ];
 
-/// Common dietary requirements offered as quick-pick options.
-const _dietaryOptions = [
-  'Gluten free',
-  'Vegetarian',
-  'Vegan',
-  'Pescatarian',
-  'Halal',
-  'Kosher',
-  'Dairy free',
-  'Nut allergy',
-];
+/// Dietary options: every [Preference.dietary] label.
+final _dietaryOptions = [for (final p in Preference.dietary) p.label];
 
 /// User preferences stored in Firestore at `users/{uid}`.
 class SettingsPage extends StatefulWidget {
-  const SettingsPage({super.key, required this.user, required this.tracking});
+  const SettingsPage({
+    super.key,
+    required this.user,
+    required this.tracking,
+    this.assistant,
+  });
 
   final User user;
   final HealthTrackingController tracking;
+  final AssistantController? assistant;
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -48,38 +46,50 @@ class _SettingsPageState extends State<SettingsPage> {
   List<String> _healthConditions = const [];
   bool _loading = true;
   bool _saving = false;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _profileChanges;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _watchPreferences();
   }
 
-  Future<void> _load() async {
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(widget.user.uid)
-          .get();
-      if (!mounted) return;
-      final data = doc.data();
-      setState(() {
-        _religions = List<String>.from(data?['religion'] ?? const []);
-        _dietary = List<String>.from(data?['dietary'] ?? const []);
-        _healthConditions = List<String>.from(
-          data?['health_conditions'] ?? const [],
+  void _watchPreferences() {
+    _profileChanges = FirebaseFirestore.instance
+        .collection('users')
+        .doc(widget.user.uid)
+        .snapshots()
+        .listen(
+          (doc) {
+            if (!mounted) return;
+            final data = doc.data();
+            setState(() {
+              _religions = List<String>.from(data?['religion'] ?? const []);
+              _dietary = List<String>.from(data?['dietary'] ?? const []);
+              _healthConditions = List<String>.from(
+                data?['health_conditions'] ?? const [],
+              );
+              _loading = false;
+            });
+          },
+          onError: (Object error) {
+            if (!mounted) return;
+            setState(() => _loading = false);
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Could not load preferences. Check your connection and retry.',
+                ),
+              ),
+            );
+          },
         );
-        _loading = false;
-      });
-    } on FirebaseException catch (e) {
-      if (!mounted) return;
-      setState(() => _loading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to load settings: ${e.message ?? e.code}'),
-        ),
-      );
-    }
+  }
+
+  @override
+  void dispose() {
+    _profileChanges?.cancel();
+    super.dispose();
   }
 
   Future<void> _save() async {
@@ -143,6 +153,39 @@ class _SettingsPageState extends State<SettingsPage> {
           style: theme.textTheme.bodyMedium,
         ),
         const SizedBox(height: 16),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.palette_outlined),
+            title: const Text('Appearance'),
+            subtitle: const Text('Light, dark or auto, and theme colour'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const AppearancePage()),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        if (widget.assistant case final assistant?) ...[
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.tune),
+              title: const Text('Assistant'),
+              subtitle: const Text('Personality, response style and voice'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () async {
+                await assistant.initialize();
+                if (!context.mounted) return;
+                await Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) =>
+                        AssistantSettingsPage(controller: assistant),
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
         Card(
           child: ListTile(
             leading: const Icon(Icons.church),

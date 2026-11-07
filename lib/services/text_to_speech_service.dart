@@ -6,9 +6,13 @@ import 'package:flutter_tts/flutter_tts.dart';
 /// The wrapper keeps call sites independent of the underlying engine, so a
 /// local neural backend can be added later without changing UI code.
 class TextToSpeechService {
-  TextToSpeechService({FlutterTts? engine}) : _engine = engine ?? FlutterTts();
+  TextToSpeechService({FlutterTts? engine}) : _providedEngine = engine;
 
-  final FlutterTts _engine;
+  final FlutterTts? _providedEngine;
+  FlutterTts? _engineInstance;
+  FlutterTts get _engine =>
+      _providedEngine ?? (_engineInstance ??= FlutterTts());
+  bool get _hasEngine => _providedEngine != null || _engineInstance != null;
   Future<void>? _configuration;
 
   Future<void> _configure() =>
@@ -27,8 +31,24 @@ class TextToSpeechService {
     await _engine.speak(normalizedText);
   }
 
+  Future<List<Map<String, String>>> getVoices() async {
+    final voices = await _engine.getVoices;
+    if (voices is! List) return const [];
+    return voices
+        .whereType<Map>()
+        .map((voice) => voice.map((key, value) => MapEntry('$key', '$value')))
+        .toList();
+  }
+
+  Future<void> setVoice(String name, String locale) async {
+    if (name.isEmpty) return;
+    await _configure();
+    await _engine.setVoice({'name': name, 'locale': locale});
+  }
+
   /// Stops the current utterance and clears queued speech.
   Future<void> stop() async {
+    if (!_hasEngine) return;
     await _engine.stop();
   }
 

@@ -1,8 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+import 'diet_window_service.dart';
+import 'nutrient_tracker_page.dart';
 import 'receipt_scan_page.dart';
-import 'receipt_store.dart';
 
 /// Diet history: scan grocery receipts and browse the stored diet, organised
 /// by the day the food was bought.
@@ -13,21 +14,29 @@ class DietHistoryPage extends StatelessWidget {
 
   Future<void> _scan(BuildContext context) async {
     if (!ReceiptScanPage.isSupported) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Receipt scanning is only supported on Android and iOS.'),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Receipt scanning is only supported on Android and iOS.',
+          ),
+        ),
+      );
       return;
     }
     final saved = await Navigator.of(context).push<int>(
       MaterialPageRoute(builder: (_) => ReceiptScanPage(userId: userId)),
     );
     if (saved == null || saved == 0 || !context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Saved $saved foods to your diet.')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Saved $saved foods to your diet.')));
   }
 
-  Future<void> _delete(BuildContext context, ReceiptStore store, String id) async {
+  Future<void> _delete(
+    BuildContext context,
+    DietWindowService diet,
+    String id,
+  ) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -49,12 +58,14 @@ class DietHistoryPage extends StatelessWidget {
     );
     if (confirmed != true) return;
     try {
-      await store.delete(id);
+      await diet.deleteDay(id);
     } catch (_) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Could not delete. Check your connection and retry.'),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not delete. Check your connection and retry.'),
+          ),
+        );
       }
     }
   }
@@ -62,7 +73,7 @@ class DietHistoryPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final store = ReceiptStore(userId);
+    final diet = DietWindowService(userId);
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -70,7 +81,7 @@ class DietHistoryPage extends StatelessWidget {
         const SizedBox(height: 4),
         const Text(
           'Scan grocery receipts to build a record of what you eat. Foods are '
-          'grouped by the day you got them.',
+          'grouped by the day you got them, and the last two weeks are kept.',
         ),
         const SizedBox(height: 12),
         FilledButton.icon(
@@ -78,9 +89,19 @@ class DietHistoryPage extends StatelessWidget {
           icon: const Icon(Icons.receipt_long),
           label: const Text('Scan receipt'),
         ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => NutrientTrackerPage(userId: userId),
+            ),
+          ),
+          icon: const Icon(Icons.insights),
+          label: const Text('Nutrient tracker'),
+        ),
         const SizedBox(height: 16),
-        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: store.history(),
+        StreamBuilder<List<DietDay>>(
+          stream: diet.recentDaysStream(),
           builder: (context, snapshot) {
             if (snapshot.hasError) {
               return const Text(
@@ -91,18 +112,51 @@ class DietHistoryPage extends StatelessWidget {
             if (!snapshot.hasData) {
               return const Center(child: CircularProgressIndicator());
             }
-            final docs = snapshot.data!.docs;
-            if (docs.isEmpty) return const Text('No foods tracked yet. Scan a receipt to start.');
+            final days = snapshot.data!;
             return Column(
               crossAxisAlignment: .stretch,
               children: [
-                if (snapshot.data!.metadata.isFromCache)
-                  const Text('Saved diet (cached)'),
-                for (final doc in docs)
-                  _DayCard(
-                    data: doc.data(),
-                    onDelete: () => _delete(context, store, doc.id),
+                if (days.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Text('No receipt purchases tracked yet.'),
                   ),
+                for (final day in days)
+                  _DayCard(
+                    day: day,
+                    onDelete: () => _delete(context, diet, day.id),
+                  ),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 20),
+        Text('Manual food logs', style: theme.textTheme.titleLarge),
+        const SizedBox(height: 4),
+        const Text(
+          'Foods you logged as eaten or purchased. These stay separate from receipt totals.',
+        ),
+        const SizedBox(height: 8),
+        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: FirebaseFirestore.instance
+              .collection('users')
+              .doc(userId)
+              .collection('foodEntries')
+              .orderBy('localDate', descending: true)
+              .limit(100)
+              .snapshots(),
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return const Text('Cannot load manual food logs.');
+            }
+            if (!snapshot.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            final docs = snapshot.data!.docs;
+            if (docs.isEmpty) return const Text('No manual food logs yet.');
+            return Column(
+              children: [
+                for (final doc in docs) _ManualEntryCard(data: doc.data()),
               ],
             );
           },
@@ -112,24 +166,54 @@ class DietHistoryPage extends StatelessWidget {
   }
 }
 
-class _DayCard extends StatelessWidget {
-  const _DayCard({required this.data, required this.onDelete});
+class _ManualEntryCard extends StatelessWidget {
+  const _ManualEntryCard({required this.data});
 
   final Map<String, dynamic> data;
+
+  @override
+  Widget build(BuildContext context) {
+    final localDay = data['localDay'];
+    final date = localDay is String
+        ? DateTime.tryParse(localDay)
+        : (data['localDate'] as Timestamp?)?.toDate().toLocal();
+    final kind = data['kind'] == 'eaten' ? 'Eaten' : 'Purchased';
+    final amount = data['amount'];
+    return Card(
+      child: ListTile(
+        leading: Icon(
+          data['kind'] == 'eaten'
+              ? Icons.restaurant
+              : Icons.shopping_bag_outlined,
+        ),
+        title: Text(data['name'] as String? ?? 'Food'),
+        subtitle: Text(
+          [
+            kind,
+            if (amount is String && amount.isNotEmpty) amount,
+            if (date != null) _formatDay(date),
+          ].join(' · '),
+        ),
+      ),
+    );
+  }
+}
+
+class _DayCard extends StatelessWidget {
+  const _DayCard({required this.day, required this.onDelete});
+
+  final DietDay day;
   final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
-    final date = (data['date'] as Timestamp?)?.toDate().toLocal();
-    final foods = List<String>.from(data['foods'] ?? const []);
-    final nutrition = <String, double>{
-      for (final entry in (data['nutrition'] as Map? ?? {}).entries)
-        if (entry.value is num) '${entry.key}': (entry.value as num).toDouble(),
-    };
+    final date = day.date;
+    final foods = day.foods;
+    final nutrition = day.nutrition;
     return Card(
       clipBehavior: Clip.antiAlias,
       child: ExpansionTile(
-        title: Text(date == null ? 'Unknown date' : _formatDay(date)),
+        title: Text(_formatDay(date)),
         subtitle: Text('${foods.length} foods'),
         children: [
           Padding(
@@ -163,10 +247,7 @@ class _DayCard extends StatelessWidget {
                   runSpacing: 6,
                   children: [
                     for (final entry in nutrition.entries)
-                      _NutrientBox(
-                        shorthand: entry.key,
-                        value: entry.value,
-                      ),
+                      _NutrientBox(shorthand: entry.key, value: entry.value),
                   ],
                 ),
               ),

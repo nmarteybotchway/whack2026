@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hackathon/food/food.dart';
 import 'package:hackathon/food/health_condition.dart';
+import 'package:hackathon/food/nutrient.dart';
 import 'package:hackathon/food/preference.dart';
 
 const bacon = Food(
@@ -41,6 +42,19 @@ void main() {
     expect(Preference.fromLabel('None'), isNull);
   });
 
+  test('every preference is a settings option that maps back', () {
+    expect(
+      {...Preference.religions, ...Preference.dietary},
+      {...Preference.preferences},
+    );
+    for (final p in Preference.preferences) {
+      expect(Preference.fromLabel(p.label), p);
+    }
+    for (final belief in Preference.otherBeliefs) {
+      expect(Preference.fromLabel(belief), isNull);
+    }
+  });
+
   test('none is never a clash', () {
     final food = Food.fromMap({
       'food': 'Apples',
@@ -66,6 +80,47 @@ void main() {
       },
     });
     expect(Food.fromMap(map).toMap(), map);
+  });
+
+  group('nutrients', () {
+    const spinach = Food(
+      name: 'Spinach',
+      nutrients: {
+        Nutrient.vitaminK: 483, // way over 15% of 75 µg
+        Nutrient.iron: 2.7, // 19% of 14 mg
+        Nutrient.calcium: 99, // 12% of 800 mg
+        Nutrient.sodium: 79,
+      },
+    );
+
+    test('round-trip by id', () {
+      final map = spinach.toMap();
+      expect(map['nutrients'], {'VITK': 483, 'FE': 2.7, 'CA': 99, 'NA': 79});
+      expect(Food.fromMap(map).nutrients, spinach.nutrients);
+    });
+
+    test('unknown ids, non-numbers and zeros are skipped', () {
+      final food = Food.fromMap({
+        'food': 'X',
+        'nutrients': {'VITC': 10, 'VITZ': 5, 'FE': 'lots', 'CA': 0},
+      });
+      expect(food.nutrients, {Nutrient.vitaminC: 10.0});
+    });
+
+    test('missing nutrients parse as none', () {
+      expect(Food.fromMap({'food': 'X'}).nutrients, isEmpty);
+    });
+
+    test('richIn uses 15% of the daily value', () {
+      expect(spinach.richIn, {Nutrient.vitaminK, Nutrient.iron});
+    });
+
+    test('highIn uses 25% of the daily limit', () {
+      expect(spinach.highIn, isEmpty);
+      const bacon = Food(name: 'Bacon', nutrients: {Nutrient.sodium: 1700});
+      expect(bacon.highIn, {Nutrient.sodium});
+      expect(bacon.richIn, isEmpty);
+    });
   });
 
   test('unknown condition and preference IDs are skipped', () {
@@ -145,6 +200,25 @@ void main() {
           prefs: {Preference.vegan, Preference.halal},
         ),
         ['Smoked tofu', 'Lentils', 'Grilled halal chicken'],
+      );
+    });
+
+    test('tieBreak only orders equally voted substitutes', () {
+      // Reverse alphabetical among ties; 'Smoked tofu' (2 votes) stays first.
+      expect(
+        bacon.alternativesFor(
+          conditions: {HealthCondition.hypertension},
+          prefs: {Preference.vegan, Preference.halal},
+          tieBreak: (a, b) => b.compareTo(a),
+        ),
+        ['Smoked tofu', 'Lentils', 'Grilled halal chicken'],
+      );
+      expect(
+        bacon.alternativesFor(
+          prefs: {Preference.vegan},
+          tieBreak: (a, b) => b.compareTo(a),
+        ),
+        ['Tempeh bacon', 'Smoked tofu'],
       );
     });
 
