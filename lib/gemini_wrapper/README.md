@@ -37,7 +37,7 @@ Then:
 ```dart
 import 'package:gemini_wrapper/gemini_wrapper.dart';
 
-final service = GeminiService(apiKey: const String.fromEnvironment('GEMINI_API_KEY'));
+final service = GeminiService(); // key from lib/secrets.dart
 
 // Prompt-only (structured JSON out).
 final parsed = await service.generate(
@@ -63,14 +63,15 @@ final receipt = await service.generate(
 
 ### API key handling
 
-Never commit the key. Pass it at build/run time:
+The key lives in `lib/secrets.dart`, which is git-ignored. Create it once per
+checkout (including each worktree) from the committed template:
 
 ```bash
-flutter run --dart-define=GEMINI_API_KEY=<your key>
-flutter test --dart-define=GEMINI_API_KEY=<your key>
+cp lib/secrets.example.dart lib/secrets.dart
 ```
 
-and read it with `const String.fromEnvironment('GEMINI_API_KEY')`.
+then set `geminiApiKey` in it. `GeminiService()` uses that key by default;
+pass `apiKey:` to override it. Never commit `lib/secrets.dart`.
 
 ## Structure
 
@@ -91,8 +92,8 @@ flutter analyze
 flutter test
 ```
 
-Optional live smoke test (requires a real key):
+Optional live smoke test (requires `geminiApiKey` set in `lib/secrets.dart`):
 
 ```bash
-flutter test --dart-define=GEMINI_API_KEY=<key> --plain-name "live"
+flutter test --dart-define=GEMINI_LIVE_TEST=true --plain-name "live"
 ```
