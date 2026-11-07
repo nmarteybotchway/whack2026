@@ -60,9 +60,10 @@ class _SettingsPageState extends State<SettingsPage> {
           .doc(widget.user.uid)
           .get();
       if (!mounted) return;
+      final data = doc.data();
       setState(() {
-        _religions = List<String>.from(doc.data()?['religion'] ?? const []);
-        _dietary = List<String>.from(doc.data()?['dietary'] ?? const []);
+        _religions = List<String>.from(data?['religion'] ?? const []);
+        _dietary = List<String>.from(data?['dietary'] ?? const []);
         _loading = false;
       });
     } on FirebaseException catch (e) {
