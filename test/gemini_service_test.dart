@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hackathon/gemini_wrapper.dart';
+import 'package:hackathon/secrets.dart';
 
 void main() {
   group('GeminiImage', () {
@@ -35,18 +36,22 @@ void main() {
     });
   });
 
-  // Note: no live API calls in tests. Network behaviour is exercised by the
-  // optional live smoke test, which only runs when a key is provided:
-  //   flutter test --dart-define=GEMINI_API_KEY=<key> --plain-name "live"
-  group('live (requires GEMINI_API_KEY dart-define)', () {
+  // Note: no live API calls by default. Network behaviour is exercised by the
+  // optional live smoke test, which needs geminiApiKey set in
+  // lib/secrets.dart and is opted into with:
+  //   flutter test --dart-define=GEMINI_LIVE_TEST=true --plain-name "live"
+  group('live (opt-in, uses geminiApiKey from lib/secrets.dart)', () {
     test('returns text for a simple schema prompt', () async {
-      const apiKey = String.fromEnvironment('GEMINI_API_KEY');
-      if (apiKey.isEmpty) {
-        markTestSkipped('GEMINI_API_KEY not provided; skipping live smoke test.');
+      if (!const bool.fromEnvironment('GEMINI_LIVE_TEST')) {
+        markTestSkipped('Live test not requested; skipping.');
+        return;
+      }
+      if (geminiApiKey.isEmpty) {
+        markTestSkipped('geminiApiKey not set; skipping live smoke test.');
         return;
       }
 
-      final service = GeminiService(apiKey: apiKey);
+      final service = GeminiService();
       final text = await service.generate(
         prompt: 'Reply with a one-word greeting in the answer field.',
         responseSchema: Schema.object(
