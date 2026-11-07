@@ -1,7 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import '../ai/food_check_demo.dart';
 import '../diet/diet_history_page.dart';
 import '../scan/scan_page.dart';
 import 'settings_page.dart';
@@ -188,17 +187,6 @@ class _HomeTab extends StatelessWidget {
         const SizedBox(height: 4),
         Text('UID: ${user.uid}', style: theme.textTheme.bodySmall),
         const SizedBox(height: 16),
-        FoodCheckDemo(user: user),
-        const SizedBox(height: 16),
-        for (var i = 1; i <= 5; i++)
-          Card(
-            child: ListTile(
-              leading: CircleAvatar(child: Text('$i')),
-              title: Text('Placeholder item $i'),
-              subtitle: const Text('Mock content'),
-              trailing: const Icon(Icons.chevron_right),
-            ),
-          ),
       ],
     );
   }
