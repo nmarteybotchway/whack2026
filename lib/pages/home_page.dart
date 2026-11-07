@@ -5,6 +5,7 @@ import '../assistant/assistant_controller.dart';
 import '../assistant/assistant_page.dart';
 import '../assistant/assistant_repository.dart';
 import '../diet/diet_history_page.dart';
+import '../diet/nutrient_tracker_page.dart';
 import '../health_data/health_tracking_controller.dart';
 import '../health_data/health_tracking_card.dart';
 import '../scan/scan_page.dart';
@@ -267,6 +268,8 @@ class _HomeTab extends StatelessWidget {
             color: theme.colorScheme.onSurfaceVariant,
           ),
         ),
+        const SizedBox(height: 16),
+        NutrientGapsCard(key: ValueKey(user.uid), userId: user.uid),
       ],
     );
   }

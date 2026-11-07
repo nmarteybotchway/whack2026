@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+import 'nutrient_tracker_page.dart';
 import 'receipt_scan_page.dart';
 import 'receipt_store.dart';
 
@@ -87,6 +88,16 @@ class DietHistoryPage extends StatelessWidget {
           onPressed: () => _scan(context),
           icon: const Icon(Icons.receipt_long),
           label: const Text('Scan receipt'),
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => NutrientTrackerPage(userId: userId),
+            ),
+          ),
+          icon: const Icon(Icons.insights),
+          label: const Text('Nutrient tracker'),
         ),
         const SizedBox(height: 16),
         StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
