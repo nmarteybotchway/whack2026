@@ -1,6 +1,8 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../health_data/blood_pressure_page.dart';
+
 /// Mock home page shown once a Firebase user is signed in.
 class HomePage extends StatefulWidget {
   const HomePage({super.key, required this.user});
@@ -57,6 +59,8 @@ class _HomePageState extends State<HomePage> {
       ),
       body: _index == 0
           ? _HomeTab(user: widget.user)
+          : _index == 2
+          ? BloodPressurePage(key: ValueKey(widget.user.uid), userId: widget.user.uid)
           : _PlaceholderTab(tab: _tabs[_index]),
       bottomNavigationBar: _BottomBar(
         index: _index,
