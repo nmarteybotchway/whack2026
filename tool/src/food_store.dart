@@ -125,30 +125,61 @@ Future<Map<String, dynamic>> askJson(
   bool webSearch = false,
   Duration timeout = const Duration(minutes: 2),
 }) async {
-  var text = await ai.generate(
+  final text = await ai.generate(
     prompt: prompt,
     responseSchema: schema,
     webSearch: webSearch,
     timeout: timeout,
   );
-  // Models sometimes ignore the JSON response format and surround the JSON
-  // with prose (often containing markdown links), so prefer a ```json fence
-  // and otherwise parse from the first bracket to its match.
-  final fenced = RegExp(r'```(?:json)?\s*([\s\S]*?)```').firstMatch(text);
-  if (fenced != null) text = fenced.group(1)!;
-  final start = text.indexOf(RegExp(r'[{[]'));
-  final end = start < 0 ? -1 : text.lastIndexOf(text[start] == '{' ? '}' : ']');
-  if (end < start) throw FormatException('No JSON in reply', text);
-  final json = jsonDecode(text.substring(start, end + 1));
-  if (json is Map<String, dynamic>) return json;
+  return _extractJson(text, schema);
+}
 
-  // They may also return just the list for a schema whose only property is
-  // a list, e.g. `[]` for `{"groups": []}`.
+/// Finds the JSON object matching [schema] in a model reply.
+///
+/// Models sometimes ignore the JSON response format and surround the JSON
+/// with prose (often containing markdown links, empty code fences or other
+/// braces), so fenced blocks are tried first, then every bracketed span of
+/// the whole reply, until one parses and has the schema's required keys.
+Map<String, dynamic> _extractJson(String text, Map<String, Object?> schema) {
+  final required = [...?(schema['required'] as List?)];
   final properties = schema['properties'] as Map<String, Object?>;
-  if (json is List && properties.length == 1) {
-    return {properties.keys.single: json};
+  Map<String, dynamic>? match(Object? json) => switch (json) {
+    Map<String, dynamic> m when required.every(m.containsKey) => m,
+    // A bare list for a schema whose only property is a list, e.g. `[]` for
+    // `{"groups": []}`.
+    List l
+        when properties.length == 1 &&
+            (properties.values.single as Map?)?['type'] == 'array' =>
+      {properties.keys.single: l},
+    _ => null,
+  };
+
+  final fences = RegExp(r'```(?:json)?\s*([\s\S]*?)```').allMatches(text);
+  for (final candidate in [...fences.map((m) => m.group(1)!), text]) {
+    for (final (open, close) in [('{', '}'), ('[', ']')]) {
+      for (
+        var start = candidate.indexOf(open);
+        start >= 0;
+        start = candidate.indexOf(open, start + 1)
+      ) {
+        for (
+          var end = candidate.lastIndexOf(close);
+          end > start;
+          end = candidate.lastIndexOf(close, end - 1)
+        ) {
+          try {
+            if (match(jsonDecode(candidate.substring(start, end + 1)))
+                case final json?) {
+              return json;
+            }
+          } on FormatException {
+            // Not JSON over this span; try a shorter one.
+          }
+        }
+      }
+    }
   }
-  throw FormatException('Reply does not match the schema', text);
+  throw FormatException('No JSON matching the schema in reply', text);
 }
 
 /// Encodes a string or list of strings as a Firestore REST value.
