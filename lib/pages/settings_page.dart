@@ -2,33 +2,21 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../food/health_condition.dart';
+import '../food/preference.dart';
 import '../health_data/body_measurements_card.dart';
-import '../health_data/health_tracking_card.dart';
+import '../health_data/health_data_card.dart';
 import '../health_data/health_tracking_controller.dart';
 
-/// Common religious beliefs offered as quick-pick options.
-const _religionOptions = [
-  'Christianity',
-  'Islam',
-  'Judaism',
-  'Hinduism',
-  'Buddhism',
-  'Sikhism',
-  'Atheist',
-  'Agnostic',
+/// Religion options: every [Preference.religions] label, then beliefs with
+/// no food rules.
+final _religionOptions = [
+  for (final p in Preference.religions) p.label,
+  ...Preference.otherBeliefs,
 ];
 
-/// Common dietary requirements offered as quick-pick options.
-const _dietaryOptions = [
-  'Gluten free',
-  'Vegetarian',
-  'Vegan',
-  'Pescatarian',
-  'Halal',
-  'Kosher',
-  'Dairy free',
-  'Nut allergy',
-];
+/// Dietary options: every [Preference.dietary] label.
+final _dietaryOptions = [for (final p in Preference.dietary) p.label];
 
 /// User preferences stored in Firestore at `users/{uid}`.
 class SettingsPage extends StatefulWidget {
@@ -44,6 +32,7 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   List<String> _religions = const [];
   List<String> _dietary = const [];
+  List<String> _healthConditions = const [];
   bool _loading = true;
   bool _saving = false;
 
@@ -64,6 +53,9 @@ class _SettingsPageState extends State<SettingsPage> {
       setState(() {
         _religions = List<String>.from(data?['religion'] ?? const []);
         _dietary = List<String>.from(data?['dietary'] ?? const []);
+        _healthConditions = List<String>.from(
+          data?['health_conditions'] ?? const [],
+        );
         _loading = false;
       });
     } on FirebaseException catch (e) {
@@ -86,6 +78,7 @@ class _SettingsPageState extends State<SettingsPage> {
           .set({
             'religion': _religions,
             'dietary': _dietary,
+            'health_conditions': _healthConditions,
             'updatedAt': FieldValue.serverTimestamp(),
           }, SetOptions(merge: true));
       if (!mounted) return;
@@ -179,12 +172,51 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
         ),
         const SizedBox(height: 8),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.medical_information_outlined),
+            title: const Text('Health conditions'),
+            subtitle: Text(
+              _healthConditions.isEmpty
+                  ? 'Not set'
+                  : _healthConditions
+                        .map(HealthCondition.fromId)
+                        .whereType<HealthCondition>()
+                        .map((condition) => condition.label)
+                        .join(', '),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: _saving
+                ? null
+                : () => _editOptions(
+                    title: 'Health conditions',
+                    options: [
+                      for (final condition in HealthCondition.conditions)
+                        condition.label,
+                    ],
+                    selected: [
+                      for (final id in _healthConditions)
+                        if (HealthCondition.fromId(id) case final condition?)
+                          condition.label,
+                    ],
+                    onSaved: (labels) => setState(() {
+                      _healthConditions = [
+                        for (final condition in HealthCondition.conditions)
+                          if (labels.contains(condition.label)) condition.id,
+                      ];
+                    }),
+                  ),
+          ),
+        ),
+        const SizedBox(height: 8),
         BodyMeasurementsCard(
           key: ValueKey(widget.user.uid),
           userId: widget.user.uid,
         ),
         const SizedBox(height: 8),
-        HealthTrackingCard(tracking: widget.tracking),
+        HealthDataCard(user: widget.user),
         if (_saving) ...[
           const SizedBox(height: 16),
           const LinearProgressIndicator(),

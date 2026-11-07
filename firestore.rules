@@ -68,6 +68,17 @@ service cloud.firestore {
         && request.resource.data.local_news is string
         && request.resource.data.general_info is string;
     }
+    match /food_images/{imageId} {
+      // Written by tool/fill_food_images.dart; url and page are empty when
+      // no image was found.
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null
+        && request.resource.data.keys().hasAll(['name', 'url', 'page'])
+        && request.resource.data.keys().hasOnly(['name', 'url', 'page', 'updatedAt'])
+        && request.resource.data.name is string
+        && request.resource.data.url is string
+        && request.resource.data.page is string;
+    }
     match /users/{uid}/receipts/{receiptId} {
       allow read, delete: if owner(uid);
       allow create, update: if owner(uid)
