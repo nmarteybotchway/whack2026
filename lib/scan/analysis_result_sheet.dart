@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../food/food_matcher.dart';
 import '../food/food_recommendation_service.dart';
 import '../food_news.dart';
 import 'camera_analysis.dart';
@@ -116,12 +117,18 @@ class AnalysisResultSheet extends StatelessWidget {
   }
 }
 
-/// The name the food news service looks up for a scanned product.
+/// The name the food news and recommendation services look up for a scanned
+/// product: the fuzzily matched [KnownFood] when there is one, since stored
+/// foods have generic names, else the product name as read.
 String _newsFoodName(ProductIdentification product) {
   final productName = product.productName;
-  return (productName != null && productName.isNotEmpty)
+  final name = (productName != null && productName.isNotEmpty)
       ? productName
       : product.displayName;
+  return (matchKnownFood(name) ?? matchKnownFood(product.displayName))
+          ?.food
+          .name ??
+      name;
 }
 
 /// Food news alert for a scanned product: a green no-news card when the
@@ -192,13 +199,17 @@ class _FoodNewsAlert extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 if (news.localNews != FoodNewsService.noNewsMessage)
-                  Text('Local news: ${news.localNews}',
-                      style: theme.textTheme.bodyMedium),
+                  Text(
+                    'Local news: ${news.localNews}',
+                    style: theme.textTheme.bodyMedium,
+                  ),
                 if (news.generalInfo != FoodNewsService.noNewsMessage) ...[
                   if (news.localNews != FoodNewsService.noNewsMessage)
                     const SizedBox(height: 4),
-                  Text('General info: ${news.generalInfo}',
-                      style: theme.textTheme.bodyMedium),
+                  Text(
+                    'General info: ${news.generalInfo}',
+                    style: theme.textTheme.bodyMedium,
+                  ),
                 ],
               ],
             ),
