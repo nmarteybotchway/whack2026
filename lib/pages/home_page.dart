@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../health_data/blood_pressure_page.dart';
+import '../games/mini_games_page.dart';
 import '../scan/scan_page.dart';
 
 /// Mock home page shown once a Firebase user is signed in.
@@ -60,7 +61,10 @@ class _HomePageState extends State<HomePage> {
       body: _index == 0
           ? _HomeTab(user: widget.user)
           : _index == 2
-          ? BloodPressurePage(key: ValueKey(widget.user.uid), userId: widget.user.uid)
+          ? BloodPressurePage(
+              key: ValueKey(widget.user.uid),
+              userId: widget.user.uid,
+            )
           : _PlaceholderTab(tab: _tabs[_index]),
       bottomNavigationBar: _BottomBar(
         index: _index,
@@ -182,18 +186,10 @@ class _HomeTab extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       children: [
         Text('Hi, $name', style: theme.textTheme.headlineSmall),
-        const SizedBox(height: 4),
-        Text('UID: ${user.uid}', style: theme.textTheme.bodySmall),
-        const SizedBox(height: 16),
-        for (var i = 1; i <= 5; i++)
-          Card(
-            child: ListTile(
-              leading: CircleAvatar(child: Text('$i')),
-              title: Text('Placeholder item $i'),
-              subtitle: const Text('Mock content'),
-              trailing: const Icon(Icons.chevron_right),
-            ),
-          ),
+        const SizedBox(height: 6),
+        Text('Take a little play break', style: theme.textTheme.bodyLarge),
+        const SizedBox(height: 18),
+        const MiniGamesSection(),
       ],
     );
   }
