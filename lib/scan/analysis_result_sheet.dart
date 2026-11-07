@@ -1,29 +1,59 @@
 import 'package:flutter/material.dart';
 
+import '../food/food_recommendation_service.dart';
+import '../food_news.dart';
 import '../theme.dart';
 import 'camera_analysis.dart';
 import 'product_identification_service.dart';
 
 /// Shows [result] in a modal bottom sheet over the scan page.
-Future<void> showAnalysisResult(BuildContext context, AnalysisResult result) {
+///
+/// Pass [newsService] to show a food news alert under the product details.
+/// Pass [recommendationService] and [userId] to also show whether the food
+/// is safe for this user and what to buy instead.
+Future<void> showAnalysisResult(
+  BuildContext context,
+  AnalysisResult result, {
+  FoodNewsService? newsService,
+  FoodRecommendationService? recommendationService,
+  String? userId,
+}) {
   return showModalBottomSheet<void>(
     context: context,
     showDragHandle: true,
     isScrollControlled: true,
-    builder: (_) => AnalysisResultSheet(result: result),
+    builder: (_) => AnalysisResultSheet(
+      result: result,
+      newsService: newsService,
+      recommendationService: recommendationService,
+      userId: userId,
+    ),
   );
 }
 
 /// Bottom-sheet content describing an [AnalysisResult].
 class AnalysisResultSheet extends StatelessWidget {
-  const AnalysisResultSheet({super.key, required this.result});
+  const AnalysisResultSheet({
+    super.key,
+    required this.result,
+    this.newsService,
+    this.recommendationService,
+    this.userId,
+  });
 
   final AnalysisResult result;
+  final FoodNewsService? newsService;
+  final FoodRecommendationService? recommendationService;
+
+  /// Signed-in user whose preferences and health data the
+  /// [recommendationService] checks against.
+  final String? userId;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final alternative = result.alternative;
+    final newsService = this.newsService;
     return SafeArea(
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -55,6 +85,26 @@ class AnalysisResultSheet extends StatelessWidget {
               const SizedBox(height: 8),
               _ItemCard(item: alternative, highlighted: true),
             ],
+            if (newsService != null &&
+                result.identification != null &&
+                result.error == null) ...[
+              const SizedBox(height: 16),
+              _FoodNewsAlert(
+                service: newsService,
+                foodName: _newsFoodName(result.identification!),
+              ),
+            ],
+            if (recommendationService != null &&
+                userId != null &&
+                result.identification != null &&
+                result.error == null) ...[
+              const SizedBox(height: 16),
+              _RecommendationCard(
+                service: recommendationService!,
+                userId: userId!,
+                foodName: _newsFoodName(result.identification!),
+              ),
+            ],
             const SizedBox(height: 16),
             FilledButton(
               onPressed: () => Navigator.of(context).pop(),
@@ -63,6 +113,199 @@ class AnalysisResultSheet extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// The name the food news service looks up for a scanned product.
+String _newsFoodName(ProductIdentification product) {
+  final productName = product.productName;
+  return (productName != null && productName.isNotEmpty)
+      ? productName
+      : product.displayName;
+}
+
+/// Food news alert for a scanned product: a green no-news card when the
+/// database has nothing, or an alert card with local news (always listed
+/// before general info) when it does.
+class _FoodNewsAlert extends StatelessWidget {
+  const _FoodNewsAlert({required this.service, required this.foodName});
+
+  final FoodNewsService service;
+  final String foodName;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<FoodNewsResult>(
+      future: service.getNews(foodName),
+      builder: (context, snap) {
+        if (!snap.hasData) {
+          return const Padding(
+            padding: EdgeInsets.all(16),
+            child: SizedBox(
+              height: 20,
+              width: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          );
+        }
+        final news = snap.data!;
+        final theme = Theme.of(context);
+        if (!news.hasAlerts) {
+          return Card(
+            color: theme.colorScheme.primaryContainer,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.check_circle_outline,
+                    color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      FoodNewsService.noNewsMessage,
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+        return Card(
+          color: theme.colorScheme.errorContainer,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      color: theme.colorScheme.onErrorContainer,
+                    ),
+                    const SizedBox(width: 8),
+                    Text('Food alert', style: theme.textTheme.titleMedium),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                if (news.localNews != FoodNewsService.noNewsMessage)
+                  Text('Local news: ${news.localNews}',
+                      style: theme.textTheme.bodyMedium),
+                if (news.generalInfo != FoodNewsService.noNewsMessage) ...[
+                  if (news.localNews != FoodNewsService.noNewsMessage)
+                    const SizedBox(height: 4),
+                  Text('General info: ${news.generalInfo}',
+                      style: theme.textTheme.bodyMedium),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Personal buy/avoid verdict for a scanned product, checked against the
+/// signed-in user's preferences and health data: a green "safe to buy" card
+/// when nothing applies, or a red card with the reasons and what to buy
+/// instead.
+class _RecommendationCard extends StatelessWidget {
+  const _RecommendationCard({
+    required this.service,
+    required this.userId,
+    required this.foodName,
+  });
+
+  final FoodRecommendationService service;
+  final String userId;
+  final String foodName;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<FoodRecommendation>(
+      future: service.recommendFor(uid: userId, foodName: foodName),
+      builder: (context, snap) {
+        if (!snap.hasData) {
+          return const Padding(
+            padding: EdgeInsets.all(16),
+            child: SizedBox(
+              height: 20,
+              width: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          );
+        }
+        final r = snap.data!;
+        final theme = Theme.of(context);
+        if (r.canBuy) {
+          return Card(
+            color: theme.colorScheme.primaryContainer,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.check_circle_outline,
+                    color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Safe to buy: no news or general info and it matches '
+                      'none of your preferences or health data.',
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+        return Card(
+          color: theme.colorScheme.errorContainer,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      color: theme.colorScheme.onErrorContainer,
+                    ),
+                    const SizedBox(width: 8),
+                    Text('Not recommended', style: theme.textTheme.titleMedium),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  [
+                    if (!r.found) 'Not in the food database',
+                    if (r.hasNews) 'Active food news',
+                    if (r.hasGeneralInfo) 'General health info',
+                    for (final c in r.clashingConditions) c.label,
+                    for (final p in r.clashingPrefs) p.label,
+                  ].join(' · '),
+                  style: theme.textTheme.bodyMedium,
+                ),
+                if (r.alternatives.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text('Try instead', style: theme.textTheme.titleSmall),
+                  const SizedBox(height: 4),
+                  for (final alt in r.alternatives.take(3))
+                    Text('• $alt', style: theme.textTheme.bodyMedium),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
