@@ -168,6 +168,69 @@ void main() {
     });
   });
 
+  group('declined swaps', () {
+    test('keys normalize like the scan result sheet', () {
+      expect(
+        FoodRecommendationService.swapKey('  Smoked\tBACON  x '),
+        'smoked bacon x',
+      );
+    });
+
+    test('a declined food keeps its reasons but offers no swaps', () {
+      final r = FoodRecommendationService.recommend(
+        bacon,
+        conditions: {HealthCondition.hypertension},
+        declinedSwaps: {'bacon'},
+      );
+      expect(r.shouldAvoid, isTrue);
+      expect(r.clashingConditions, {HealthCondition.hypertension});
+      expect(r.swapDeclined, isTrue);
+      expect(r.alternatives, isEmpty);
+    });
+
+    test('declining another food leaves the swaps in place', () {
+      final r = FoodRecommendationService.recommend(
+        bacon,
+        declinedSwaps: {'apples'},
+      );
+      expect(r.swapDeclined, isFalse);
+      expect(r.alternatives, ['Roast chicken']);
+    });
+
+    test('a buyable food is never reported as declined', () {
+      final r = FoodRecommendationService.recommend(
+        oranges,
+        declinedSwaps: {'oranges'},
+      );
+      expect(r.canBuy, isTrue);
+      expect(r.swapDeclined, isFalse);
+    });
+
+    test('parseProfile reads ignored_swap_items as normalized keys', () {
+      final p = FoodRecommendationService.parseProfile({
+        'ignored_swap_items': ['bacon', '  Apple   Pie ', ' '],
+      });
+      expect(p.declinedSwaps, {'bacon', 'apple pie'});
+    });
+
+    test('recommendFor applies the stored declined swaps', () async {
+      final service = FoodRecommendationService(
+        fetcher: (name) async => bacon,
+        userFetcher: (uid) async => {
+          'health_conditions': ['hypertension'],
+          'ignored_swap_items': ['bacon'],
+        },
+        insightsFetcher: (uid) async =>
+            NutrientInsights.fromDaily({}, today: DateTime(2026, 11, 7)),
+      );
+      final r = await service.recommendFor(uid: 'u1', foodName: 'Bacon');
+      expect(r.shouldAvoid, isTrue);
+      expect(r.swapDeclined, isTrue);
+      expect(r.alternatives, isEmpty);
+      expect(r.profile.conditions, {HealthCondition.hypertension});
+    });
+  });
+
   group('parseProfile', () {
     test('missing document yields an empty profile', () {
       final p = FoodRecommendationService.parseProfile(null);

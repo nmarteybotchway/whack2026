@@ -3,7 +3,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hackathon/assistant/assistant_models.dart';
 import 'package:hackathon/assistant/assistant_repository.dart';
 import 'package:hackathon/diet/diet_window_service.dart';
+import 'package:hackathon/diet/nutrient_insights.dart';
 import 'package:hackathon/diet/receipt_parser.dart';
+import 'package:hackathon/food/food.dart';
+import 'package:hackathon/food/food_recommendation_service.dart';
+import 'package:hackathon/food/health_condition.dart';
+import 'package:hackathon/food/nutrient.dart';
+import 'package:hackathon/food/preference.dart';
 
 void main() {
   group('FirestoreAssistantRepository proposal boundary', () {
@@ -146,6 +152,78 @@ void main() {
       [for (final r in ranged.data['records'] as List) (r as Map)['id']],
       ['d3'],
     );
+  });
+
+  group('get_alternatives', () {
+    const crisps = Food(
+      name: 'Crisps',
+      alternatives: {
+        HealthCondition.none: {
+          Preference.none: ['Popcorn', 'Oranges'],
+        },
+      },
+      nutrients: {Nutrient.sodium: 700},
+    );
+    const popcorn = Food(name: 'Popcorn', personalPrefs: {Preference.vegan});
+    final foods = {
+      for (final f in [crisps, popcorn]) f.id: f,
+    };
+
+    FirestoreAssistantRepository repositoryFor(
+      _NoReadFirestore firestore,
+      Map<String, dynamic> user,
+    ) => FirestoreAssistantRepository(
+      userId: 'fixed-user',
+      firestore: firestore,
+      recommendations: FoodRecommendationService(
+        fetcher: (name) async => foods[Food.idFor(name)],
+        userFetcher: (uid) async => uid == 'fixed-user' ? user : null,
+        insightsFetcher: (uid) async => NutrientInsights.fromDaily({
+          DateTime(2026, 11, 7): {'NA': 20000},
+        }, today: DateTime(2026, 11, 7)),
+      ),
+    );
+
+    test('delegates to the recommendation service', () async {
+      final firestore = _NoReadFirestore();
+      final result = await repositoryFor(firestore, {
+        'dietary': ['Vegan'],
+      }).execute('get_alternatives', {'name': 'crisps'});
+      final data = result.data;
+      expect(firestore.calls, 0);
+      expect(data['found'], true);
+      expect(data['shouldAvoid'], true);
+      expect(data['canBuy'], false);
+      expect(data['excessNutrients'], ['Sodium']);
+      expect(data['reasons'], ['Diet already high in Sodium']);
+      expect(data['swapDeclined'], false);
+      expect((data['food'] as Map)['nutrients'], {'NA': 700.0});
+      final alternatives = data['alternatives'] as List;
+      expect(
+        [for (final a in alternatives) (a as Map)['name']],
+        ['Popcorn', 'Oranges'],
+      );
+      expect((alternatives[0] as Map)['knownConflicts'], ['Vegan']);
+      expect((alternatives[1] as Map)['knownConflicts'], isNull);
+    });
+
+    test('reports declined swaps without alternatives', () async {
+      final result = await repositoryFor(_NoReadFirestore(), {
+        'ignored_swap_items': ['crisps'],
+      }).execute('get_alternatives', {'name': 'Crisps'});
+      expect(result.data['shouldAvoid'], true);
+      expect(result.data['excessNutrients'], ['Sodium']);
+      expect(result.data['swapDeclined'], true);
+      expect(result.data['alternatives'], isEmpty);
+    });
+
+    test('unknown food is not found', () async {
+      final result = await repositoryFor(
+        _NoReadFirestore(),
+        {},
+      ).execute('get_alternatives', {'name': 'Durian'});
+      expect(result.data, {'found': false, 'alternatives': []});
+    });
   });
 }
 
