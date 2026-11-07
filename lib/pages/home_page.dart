@@ -1,7 +1,9 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import '../health_data/blood_pressure_page.dart';
+// Health Connect is paused; keep the implementation for later.
+// import '../health_data/blood_pressure_page.dart';
+import '../health_data/body_measurements_page.dart';
 import '../scan/scan_page.dart';
 
 /// Mock home page shown once a Firebase user is signed in.
@@ -60,7 +62,11 @@ class _HomePageState extends State<HomePage> {
       body: _index == 0
           ? _HomeTab(user: widget.user)
           : _index == 2
-          ? BloodPressurePage(key: ValueKey(widget.user.uid), userId: widget.user.uid)
+          // To restore watch syncing, use BloodPressurePage here.
+          ? BodyMeasurementsPage(
+              key: ValueKey(widget.user.uid),
+              userId: widget.user.uid,
+            )
           : _PlaceholderTab(tab: _tabs[_index]),
       bottomNavigationBar: _BottomBar(
         index: _index,
