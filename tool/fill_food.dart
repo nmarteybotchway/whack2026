@@ -9,9 +9,11 @@
 /// `food.txt` holds one food per line; blank lines and `#` comments are
 /// skipped. New foods get health conditions, personal prefs, general info and
 /// local news from OpenRouter with web search, then a second call (without
-/// search) fills the alternatives for each condition/preference pair. Foods
-/// already stored only have their local news refreshed, unless `--full`
-/// regenerates them completely (e.g. after the document format changes).
+/// search) fills the alternatives for each condition/preference pair, and a
+/// third fills the vitamins and minerals per 100 g. Foods already stored
+/// only have their local news refreshed (and their nutrients filled if they
+/// have none yet), unless `--full` regenerates them completely (e.g. after
+/// the document format changes).
 ///
 /// Step 1 of tool/fill_food_db.dart, which runs the whole pipeline.
 library;
@@ -20,6 +22,7 @@ import 'dart:io';
 
 import 'package:hackathon/food/food.dart';
 import 'package:hackathon/food/health_condition.dart';
+import 'package:hackathon/food/nutrient.dart';
 import 'package:hackathon/food/preference.dart';
 import 'package:hackathon/openrouter.dart';
 
@@ -85,6 +88,15 @@ final _fullSchema = {
     'general_info',
     'local_news',
   ],
+  'additionalProperties': false,
+};
+
+final _nutrientsSchema = {
+  'type': 'object',
+  'properties': {
+    for (final n in Nutrient.values) n.id: {'type': 'number'},
+  },
+  'required': [for (final n in Nutrient.values) n.id],
   'additionalProperties': false,
 };
 
@@ -181,9 +193,22 @@ Future<void> _fill(
 }) async {
   final id = Food.idFor(name);
   final today = DateTime.now().toIso8601String().substring(0, 10);
-  final existing = await store.exists(id);
+  final stored = await store.get(id);
+  final existing = stored != null;
 
   if (existing && !full) {
+    if (stored.nutrients.isEmpty) {
+      final nutrients = await _nutrients(ai, name);
+      stdout.writeln('↻ $name: nutrients ${_describe(nutrients)}');
+      if (!dryRun) {
+        await store.write(id, {
+          'nutrients': {
+            for (final MapEntry(:key, :value) in nutrients.entries)
+              key.id: value,
+          },
+        }, create: false);
+      }
+    }
     final reply = await _ask(
       ai,
       'Today is $today. Search for current food-safety news about "$name" '
@@ -253,13 +278,15 @@ Future<void> _fill(
     personalPrefs: personalPrefs,
     generalInfo: generalInfo,
     localNews: (reply['local_news'] as String).trim(),
+    nutrients: await _nutrients(ai, name),
   );
   stdout.writeln(
     '${existing ? '↻' : '+'} $name: ${food.healthConditions.map((c) => c.id).join(', ')}'
     ' | personal_prefs: ${food.personalPrefs.map((p) => p.id).join(', ')}'
     ' | alternatives: ${food.toMap()['alternatives']}'
     ' | general_info: ${food.generalInfo.isEmpty ? '(none)' : '"${food.generalInfo}"'}'
-    ' | local_news: ${food.hasNews ? '"${food.localNews}"' : '(none)'}',
+    ' | local_news: ${food.hasNews ? '"${food.localNews}"' : '(none)'}'
+    ' | nutrients: ${_describe(food.nutrients)}',
   );
   if (dryRun) return;
   existing
@@ -350,6 +377,31 @@ Future<Map<HealthCondition, Map<Preference, List<String>>>> _alternatives(
   }
   return result;
 }
+
+/// Typical vitamins and minerals per 100 g of [name], in each
+/// [Nutrient.unit]; negligible ones are left out.
+Future<Map<Nutrient, double>> _nutrients(
+  OpenRouterService ai,
+  String name,
+) async {
+  final reply = await askJson(
+    ai,
+    'Give the typical amount of each nutrient below in 100 g of "$name" as '
+    'normally sold in UK shops (raw unless it is usually sold cooked or '
+    'prepared), based on standard food composition tables such as USDA '
+    'FoodData Central or the UK CoFID. Use exactly the unit given for each '
+    '(MG milligrams, UG micrograms). Use 0 when the food has none or a '
+    'negligible amount; never guess wildly.\n'
+    '${Nutrient.values.map((n) => '- ${n.id}: ${n.label} (${n.unit})').join('\n')}'
+    '\n\nReply as JSON.',
+    _nutrientsSchema,
+  );
+  return Nutrient.parseAmounts(reply);
+}
+
+String _describe(Map<Nutrient, double> nutrients) => nutrients.isEmpty
+    ? '(none)'
+    : nutrients.entries.map((e) => '${e.key.id} ${e.value}').join(', ');
 
 Future<Map<String, dynamic>> _ask(
   OpenRouterService ai,

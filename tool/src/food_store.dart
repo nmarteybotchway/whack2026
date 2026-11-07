@@ -25,7 +25,7 @@ const _documentsUrl =
 /// Per-request limit so one stalled call fails instead of hanging a run.
 const _httpTimeout = Duration(seconds: 30);
 
-/// The Firestore `food` collection, accessed over REST.
+/// The Firestore `food` and `food_images` collections, accessed over REST.
 class FoodStore {
   FoodStore._(this._auth);
 
@@ -33,26 +33,54 @@ class FoodStore {
 
   static Future<FoodStore> signIn() async => FoodStore._(await _Auth.signIn());
 
-  Future<bool> exists(String id) async {
+  /// The food stored as `food/{id}`, or null if there is none.
+  Future<Food?> get(String id) async {
     final response = await http
         .get(
           Uri.parse('$_documentsUrl/food/${Uri.encodeComponent(id)}'),
           headers: await _auth.headers(),
         )
         .timeout(_httpTimeout);
-    if (response.statusCode == 404) return false;
+    if (response.statusCode == 404) return null;
     _check(response);
-    return true;
+    final fields = (jsonDecode(response.body) as Map)['fields'] as Map? ?? {};
+    return Food.fromMap({
+      for (final MapEntry(:key, :value) in fields.entries)
+        key as String: _decode(value as Map<String, dynamic>),
+    });
   }
 
   /// Every stored food, keyed by document ID.
-  Future<Map<String, Food>> all() async {
-    final foods = <String, Food>{};
+  Future<Map<String, Food>> all() async => {
+    for (final MapEntry(:key, :value) in (await _list('food')).entries)
+      key: Food.fromMap(value),
+  };
+
+  /// The image URL stored in `food_images/{id}` for every name looked up so
+  /// far, keyed by document ID; empty for names with no image.
+  Future<Map<String, String>> imageUrls() async => {
+    for (final MapEntry(:key, :value) in (await _list('food_images')).entries)
+      key: value['url'] as String? ?? '',
+  };
+
+  /// Creates or replaces `food_images/{id}`.
+  Future<void> writeImage(
+    String id, {
+    required String name,
+    required String url,
+    required String page,
+  }) => _commit([
+    _update('food_images', id, {'name': name, 'url': url, 'page': page}),
+  ]);
+
+  /// Every document in [collection] as decoded fields, keyed by document ID.
+  Future<Map<String, Map<String, dynamic>>> _list(String collection) async {
+    final docs = <String, Map<String, dynamic>>{};
     String? pageToken;
     do {
       final response = await http
           .get(
-            Uri.parse('$_documentsUrl/food').replace(
+            Uri.parse('$_documentsUrl/$collection').replace(
               queryParameters: {'pageSize': '300', 'pageToken': ?pageToken},
             ),
             headers: await _auth.headers(),
@@ -62,14 +90,15 @@ class FoodStore {
       final body = jsonDecode(response.body) as Map<String, dynamic>;
       for (final doc in (body['documents'] as List? ?? const [])) {
         final name = doc['name'] as String;
-        final fields = (doc['fields'] as Map<String, dynamic>? ?? const {}).map(
+        docs[name.substring(
+          name.lastIndexOf('/') + 1,
+        )] = (doc['fields'] as Map<String, dynamic>? ?? const {}).map(
           (k, v) => MapEntry(k, _decode(v as Map<String, dynamic>)),
         );
-        foods[name.substring(name.lastIndexOf('/') + 1)] = Food.fromMap(fields);
       }
       pageToken = body['nextPageToken'] as String?;
     } while (pageToken != null);
-    return foods;
+    return docs;
   }
 
   /// Writes [fields] to `food/{id}` and stamps `updatedAt` with server time.
@@ -82,7 +111,7 @@ class FoodStore {
     required bool create,
   }) => _commit([
     {
-      ..._update(id, fields),
+      ..._update('food', id, fields),
       if (!create) 'updateMask': {'fieldPaths': fields.keys.toList()},
       'currentDocument': {'exists': !create},
     },
@@ -90,14 +119,18 @@ class FoodStore {
 
   /// Atomically replaces `food/{food.id}` with [food] and deletes [remove].
   Future<void> replace(Food food, Iterable<String> remove) => _commit([
-    _update(food.id, food.toMap()),
+    _update('food', food.id, food.toMap()),
     for (final id in remove)
       if (id != food.id) {'delete': '$_databasePath/documents/food/$id'},
   ]);
 
-  Map<String, dynamic> _update(String id, Map<String, dynamic> fields) => {
+  Map<String, dynamic> _update(
+    String collection,
+    String id,
+    Map<String, dynamic> fields,
+  ) => {
     'update': {
-      'name': '$_databasePath/documents/food/$id',
+      'name': '$_databasePath/documents/$collection/$id',
       'fields': fields.map((k, v) => MapEntry(k, _encode(v))),
     },
     'updateTransforms': [
@@ -151,11 +184,22 @@ Map<String, dynamic> _extractJson(String text, Map<String, Object?> schema) {
         when properties.length == 1 &&
             (properties.values.single as Map?)?['type'] == 'array' =>
       {properties.keys.single: l},
+    // Likewise a bare string, e.g. the news itself for `{"local_news": ""}`.
+    String s
+        when properties.length == 1 &&
+            (properties.values.single as Map?)?['type'] == 'string' =>
+      {properties.keys.single: s},
     _ => null,
   };
 
   final fences = RegExp(r'```(?:json)?\s*([\s\S]*?)```').allMatches(text);
   for (final candidate in [...fences.map((m) => m.group(1)!), text]) {
+    // Whole candidate first, which also catches a bare string such as `""`.
+    try {
+      if (match(jsonDecode(candidate.trim())) case final json?) return json;
+    } on FormatException {
+      // Not JSON as a whole; look for a bracketed span below.
+    }
     for (final (open, close) in [('{', '}'), ('[', ']')]) {
       for (
         var start = candidate.indexOf(open);
@@ -182,9 +226,11 @@ Map<String, dynamic> _extractJson(String text, Map<String, Object?> schema) {
   throw FormatException('No JSON matching the schema in reply', text);
 }
 
-/// Encodes strings, lists and string-keyed maps as a Firestore REST value.
+/// Encodes strings, numbers, lists and string-keyed maps as a Firestore REST
+/// value.
 Map<String, dynamic> _encode(Object? v) => switch (v) {
   String s => {'stringValue': s},
+  num n => {'doubleValue': n.toDouble()},
   List l => {
     'arrayValue': {'values': l.map(_encode).toList()},
   },
@@ -198,6 +244,8 @@ Map<String, dynamic> _encode(Object? v) => switch (v) {
 /// `updatedAt`) become null, which [Food.fromMap] ignores.
 Object? _decode(Map<String, dynamic> v) => switch (v) {
   {'stringValue': String s} => s,
+  {'doubleValue': num n} => n,
+  {'integerValue': String n} => int.parse(n),
   {'arrayValue': Map a} => [
     for (final e in (a['values'] as List? ?? const []))
       _decode(e as Map<String, dynamic>),

@@ -3,9 +3,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 
+import 'diet_window_service.dart';
 import 'receipt_parser.dart';
 import 'receipt_review_sheet.dart';
-import 'receipt_store.dart';
 import 'veryfi_service.dart';
 
 /// Camera page that photographs a receipt, reads it with the on-device ML Kit
@@ -125,7 +125,7 @@ class _ReceiptScanPageState extends State<ReceiptScanPage>
       final reviewed = await showReceiptReview(context, items);
       if (reviewed == null || reviewed.items.isEmpty || !mounted) return;
 
-      await ReceiptStore(widget.userId).save(reviewed.items, reviewed.day);
+      await DietWindowService(widget.userId).save(reviewed.items, reviewed.day);
       if (!mounted) return;
       Navigator.of(context).pop(reviewed.items.length);
     } catch (e) {
@@ -212,8 +212,8 @@ class _ReceiptScanPageState extends State<ReceiptScanPage>
               child: FloatingActionButton(
                 tooltip: 'Capture receipt',
                 shape: const CircleBorder(),
-                backgroundColor: Colors.green,
-                foregroundColor: Colors.white,
+                backgroundColor: Theme.of(context).colorScheme.primary,
+                foregroundColor: Theme.of(context).colorScheme.onPrimary,
                 onPressed: _busy ? null : _capture,
                 child: _busy
                     ? const CircularProgressIndicator(color: Colors.white)

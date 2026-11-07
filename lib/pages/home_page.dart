@@ -1,7 +1,11 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../assistant/assistant_controller.dart';
+import '../assistant/assistant_page.dart';
+import '../assistant/assistant_repository.dart';
 import '../diet/diet_history_page.dart';
+import '../diet/nutrient_tracker_page.dart';
 import '../garden/nutrient_garden.dart';
 import '../health_data/health_tracking_controller.dart';
 import '../health_data/health_tracking_card.dart';
@@ -31,17 +35,41 @@ const _leftTabs = [
   _Tab('History', Icons.history_outlined, Icons.history),
 ];
 
-const _rightTabs = [_Tab('Settings', Icons.settings_outlined, Icons.settings)];
+const _rightTabs = [
+  _Tab('Assistant', Icons.chat_bubble_outline, Icons.chat_bubble),
+  _Tab('Settings', Icons.settings_outlined, Icons.settings),
+];
 
 const _tabs = [..._leftTabs, ..._rightTabs];
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   int _index = 0;
   late final HealthTrackingController _tracking;
+  late final AssistantController _assistant;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _assistant = AssistantController(
+      data: FirestoreAssistantRepository(
+        userId: widget.user.uid,
+        profile: {
+          'displayName': widget.user.displayName,
+          'email': widget.user.email,
+          'isAnonymous': widget.user.isAnonymous,
+          'emailVerified': widget.user.emailVerified,
+          'phoneNumber': widget.user.phoneNumber,
+          'photoURL': widget.user.photoURL,
+          'createdAt': widget.user.metadata.creationTime
+              ?.toUtc()
+              .toIso8601String(),
+          'lastSignInAt': widget.user.metadata.lastSignInTime
+              ?.toUtc()
+              .toIso8601String(),
+        },
+      ),
+    );
     _tracking = HealthTrackingController(widget.user.uid);
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _tracking.initialize();
@@ -53,42 +81,64 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _assistant.dispose();
     _tracking.dispose();
     super.dispose();
   }
 
-  void _scan() {
-    Navigator.of(context).push(
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // A microphone permission dialog can make the app briefly inactive.
+    // Stop capture when it actually leaves the foreground, without cancelling
+    // the user's first microphone request while permission is being granted.
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      _assistant.suspend();
+    }
+  }
+
+  void _selectTab(int index) {
+    if (_index == index) return;
+    if (_index == 2) _assistant.suspend();
+    if (index == 2) _assistant.initialize();
+    setState(() => _index = index);
+  }
+
+  Future<void> _scan() async {
+    await _assistant.suspend();
+    if (!mounted) return;
+    await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => ScanPage(userId: widget.user.uid),
+        builder: (_) =>
+            ScanPage(userId: widget.user.uid, assistant: _assistant),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: theme.colorScheme.inversePrimary,
-        title: Text(_tabs[_index].label),
-      ),
+      appBar: AppBar(title: Text(_tabs[_index].label)),
       body: switch (_index) {
         0 => _HomeTab(user: widget.user),
         1 => DietHistoryPage(
           key: ValueKey(widget.user.uid),
           userId: widget.user.uid,
         ),
-        2 => SettingsPage(
+        2 => AssistantPage(controller: _assistant),
+        3 => SettingsPage(
           key: ValueKey(widget.user.uid),
           user: widget.user,
           tracking: _tracking,
+          assistant: _assistant,
         ),
         _ => const SizedBox.shrink(),
       },
       bottomNavigationBar: _BottomBar(
         index: _index,
-        onSelect: (i) => setState(() => _index = i),
+        onSelect: _selectTab,
         onScan: _scan,
       ),
     );
@@ -183,8 +233,8 @@ class _ScanButton extends StatelessWidget {
         heroTag: null,
         tooltip: 'Scan',
         shape: const CircleBorder(),
-        backgroundColor: Colors.green,
-        foregroundColor: Colors.white,
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        foregroundColor: Theme.of(context).colorScheme.onPrimary,
         elevation: 2,
         onPressed: onPressed,
         child: const Icon(Icons.qr_code_scanner, size: 30),
@@ -201,13 +251,25 @@ class _HomeTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final name = user.displayName ?? user.email ?? 'Guest';
+    final name = user.displayName ?? user.email?.split('@').first ?? 'there';
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        Text('Hi, $name', style: theme.textTheme.headlineSmall),
+        Text(
+          'Hi, $name',
+          style: theme.textTheme.headlineMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
         const SizedBox(height: 4),
-        Text('UID: ${user.uid}', style: theme.textTheme.bodySmall),
+        Text(
+          'Your health, in one place.',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 16),
+        NutrientGapsCard(key: ValueKey(user.uid), userId: user.uid),
         const SizedBox(height: 16),
         // TODO: feed from NutrientScoreService once diet history is wired;
         // 0.62 stands in for a decent-but-not-perfect diet.
