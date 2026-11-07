@@ -9,7 +9,6 @@ import '../diet/nutrient_tracker_page.dart';
 import '../health_data/health_tracking_controller.dart';
 import '../health_data/health_tracking_card.dart';
 import '../scan/scan_page.dart';
-import '../theme.dart';
 import 'settings_page.dart';
 
 /// Mock home page shown once a Firebase user is signed in.
@@ -233,8 +232,8 @@ class _ScanButton extends StatelessWidget {
         heroTag: null,
         tooltip: 'Scan',
         shape: const CircleBorder(),
-        backgroundColor: AppTheme.seed,
-        foregroundColor: Colors.white,
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        foregroundColor: Theme.of(context).colorScheme.onPrimary,
         elevation: 2,
         onPressed: onPressed,
         child: const Icon(Icons.qr_code_scanner, size: 30),

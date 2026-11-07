@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
+import 'appearance/appearance_controller.dart';
 import 'firebase_options.dart';
 import 'pages/home_page.dart';
 import 'theme.dart';
@@ -9,21 +10,29 @@ import 'theme.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  runApp(const MyApp());
+  final appearance = await AppearanceController.load();
+  runApp(MyApp(appearance: appearance));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  const MyApp({super.key, required this.appearance});
+
+  final AppearanceController appearance;
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Hackathon',
-      theme: AppTheme.light(),
-      darkTheme: AppTheme.dark(),
-      // The design is white-first; keep it light even in system dark mode.
-      themeMode: ThemeMode.light,
-      home: const AuthGate(),
+    return AppearanceScope(
+      controller: appearance,
+      child: ListenableBuilder(
+        listenable: appearance,
+        builder: (context, _) => MaterialApp(
+          title: 'Hackathon',
+          theme: AppTheme.light(appearance.accent),
+          darkTheme: AppTheme.dark(appearance.accent),
+          themeMode: appearance.mode,
+          home: const AuthGate(),
+        ),
+      ),
     );
   }
 }
@@ -46,9 +55,9 @@ class _AuthGateState extends State<AuthGate> {
     FirebaseAuth.instance.authStateChanges().listen((user) {
       if (user == null && !_signingIn) {
         _signingIn = true;
-        FirebaseAuth.instance
-            .signInAnonymously()
-            .whenComplete(() => _signingIn = false);
+        FirebaseAuth.instance.signInAnonymously().whenComplete(
+          () => _signingIn = false,
+        );
       }
     });
   }

@@ -6,7 +6,6 @@ import '../assistant/assistant_controller.dart';
 import '../assistant/assistant_page.dart';
 import '../food/food_recommendation_service.dart';
 import '../food_news.dart';
-import '../theme.dart';
 import 'analysis_result_sheet.dart';
 import 'camera_analysis.dart';
 import 'frame_gate.dart';
@@ -355,8 +354,8 @@ class _CaptureButton extends StatelessWidget {
       child: FloatingActionButton(
         tooltip: 'Analyse frame',
         shape: const CircleBorder(),
-        backgroundColor: AppTheme.seed,
-        foregroundColor: Colors.white,
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        foregroundColor: Theme.of(context).colorScheme.onPrimary,
         onPressed: busy ? null : onPressed,
         child: busy
             ? const CircularProgressIndicator(color: Colors.white)
