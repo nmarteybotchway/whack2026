@@ -2,6 +2,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../theme.dart';
 import 'analysis_result_sheet.dart';
 import 'camera_analysis.dart';
 
@@ -182,7 +183,7 @@ class _CaptureButton extends StatelessWidget {
       child: FloatingActionButton(
         tooltip: 'Analyse frame',
         shape: const CircleBorder(),
-        backgroundColor: Colors.green,
+        backgroundColor: AppTheme.seed,
         foregroundColor: Colors.white,
         onPressed: busy ? null : onPressed,
         child: busy

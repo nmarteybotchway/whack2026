@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../theme.dart';
 import 'camera_analysis.dart';
 import 'product_identification_service.dart';
 
@@ -262,11 +263,12 @@ class _ScoreBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final status = AppTheme.statusColors;
     final color = score >= 60
-        ? Colors.green
+        ? status.good
         : score >= 40
-        ? Colors.orange
-        : Colors.red;
+        ? status.warn
+        : status.bad;
     return SizedBox.square(
       dimension: 56,
       child: Stack(

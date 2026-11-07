@@ -6,6 +6,7 @@ import '../health_data/health_tracking_controller.dart';
 import '../health_data/health_tracking_card.dart';
 import '../health_data/heart_rate_page.dart';
 import '../scan/scan_page.dart';
+import '../theme.dart';
 import 'settings_page.dart';
 
 /// Mock home page shown once a Firebase user is signed in.
@@ -67,12 +68,8 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: theme.colorScheme.inversePrimary,
-        title: Text(_tabs[_index].label),
-      ),
+      appBar: AppBar(title: Text(_tabs[_index].label)),
       body: switch (_index) {
         0 => _HomeTab(user: widget.user),
         1 => DietHistoryPage(
@@ -183,7 +180,7 @@ class _ScanButton extends StatelessWidget {
         heroTag: null,
         tooltip: 'Scan',
         shape: const CircleBorder(),
-        backgroundColor: Colors.green,
+        backgroundColor: AppTheme.seed,
         foregroundColor: Colors.white,
         elevation: 2,
         onPressed: onPressed,
@@ -201,17 +198,27 @@ class _HomeTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final name = user.displayName ?? user.email ?? 'Guest';
+    final name = user.displayName ?? user.email?.split('@').first ?? 'there';
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        Text('Hi, $name', style: theme.textTheme.headlineSmall),
+        Text(
+          'Hi, $name',
+          style: theme.textTheme.headlineMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
         const SizedBox(height: 4),
-        Text('UID: ${user.uid}', style: theme.textTheme.bodySmall),
+        Text(
+          'Your health, in one place.',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
         const SizedBox(height: 16),
         Card(
           child: ListTile(
-            leading: Icon(Icons.favorite, color: theme.colorScheme.error),
+            leading: Icon(Icons.favorite, color: theme.colorScheme.primary),
             title: const Text('Heart rate'),
             subtitle: const Text('From Samsung Health / Health Connect'),
             trailing: const Icon(Icons.chevron_right),
