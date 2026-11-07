@@ -2,6 +2,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../health_data/body_measurements_card.dart';
+import '../health_data/health_tracking_card.dart';
+import '../health_data/health_tracking_controller.dart';
+
 /// Common religious beliefs offered as quick-pick options.
 const _religionOptions = [
   'Christianity',
@@ -28,9 +32,10 @@ const _dietaryOptions = [
 
 /// User preferences stored in Firestore at `users/{uid}`.
 class SettingsPage extends StatefulWidget {
-  const SettingsPage({super.key, required this.user});
+  const SettingsPage({super.key, required this.user, required this.tracking});
 
   final User user;
+  final HealthTrackingController tracking;
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -64,7 +69,9 @@ class _SettingsPageState extends State<SettingsPage> {
       if (!mounted) return;
       setState(() => _loading = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to load settings: ${e.message ?? e.code}')),
+        SnackBar(
+          content: Text('Failed to load settings: ${e.message ?? e.code}'),
+        ),
       );
     }
   }
@@ -76,14 +83,13 @@ class _SettingsPageState extends State<SettingsPage> {
           .collection('users')
           .doc(widget.user.uid)
           .set({
-        'religion': _religions,
-        'dietary': _dietary,
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+            'religion': _religions,
+            'dietary': _dietary,
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Preferences saved')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Preferences saved')));
     } on FirebaseException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -100,6 +106,7 @@ class _SettingsPageState extends State<SettingsPage> {
     required List<String> selected,
     required ValueChanged<List<String>> onSaved,
   }) async {
+    if (_saving) return;
     final result = await showModalBottomSheet<List<String>>(
       context: context,
       isScrollControlled: true,
@@ -107,7 +114,10 @@ class _SettingsPageState extends State<SettingsPage> {
       builder: (context) =>
           _OptionsSheet(title: title, options: options, initial: selected),
     );
-    if (result != null) onSaved(result);
+    if (result != null && mounted) {
+      onSaved(result);
+      await _save();
+    }
   }
 
   @override
@@ -122,7 +132,7 @@ class _SettingsPageState extends State<SettingsPage> {
         Text('Preferences', style: theme.textTheme.headlineSmall),
         const SizedBox(height: 4),
         Text(
-          'These help us tailor recommendations for you.',
+          'Tap a preference to view or update it.',
           style: theme.textTheme.bodyMedium,
         ),
         const SizedBox(height: 16),
@@ -136,12 +146,14 @@ class _SettingsPageState extends State<SettingsPage> {
               overflow: TextOverflow.ellipsis,
             ),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => _editOptions(
-              title: 'Religion & beliefs',
-              options: _religionOptions,
-              selected: _religions,
-              onSaved: (value) => setState(() => _religions = value),
-            ),
+            onTap: _saving
+                ? null
+                : () => _editOptions(
+                    title: 'Religion & beliefs',
+                    options: _religionOptions,
+                    selected: _religions,
+                    onSaved: (value) => setState(() => _religions = value),
+                  ),
           ),
         ),
         const SizedBox(height: 8),
@@ -155,25 +167,27 @@ class _SettingsPageState extends State<SettingsPage> {
               overflow: TextOverflow.ellipsis,
             ),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => _editOptions(
-              title: 'Dietary requirements',
-              options: _dietaryOptions,
-              selected: _dietary,
-              onSaved: (value) => setState(() => _dietary = value),
-            ),
+            onTap: _saving
+                ? null
+                : () => _editOptions(
+                    title: 'Dietary requirements',
+                    options: _dietaryOptions,
+                    selected: _dietary,
+                    onSaved: (value) => setState(() => _dietary = value),
+                  ),
           ),
         ),
-        const SizedBox(height: 24),
-        FilledButton.icon(
-          onPressed: _saving ? null : _save,
-          icon: _saving
-              ? const SizedBox.square(
-                  dimension: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.save),
-          label: const Text('Save preferences'),
+        const SizedBox(height: 8),
+        BodyMeasurementsCard(
+          key: ValueKey(widget.user.uid),
+          userId: widget.user.uid,
         ),
+        const SizedBox(height: 8),
+        HealthTrackingCard(tracking: widget.tracking),
+        if (_saving) ...[
+          const SizedBox(height: 16),
+          const LinearProgressIndicator(),
+        ],
       ],
     );
   }
@@ -281,10 +295,7 @@ class _OptionsSheetState extends State<_OptionsSheet> {
             ),
             Padding(
               padding: const EdgeInsets.all(16),
-              child: FilledButton(
-                onPressed: _done,
-                child: const Text('Done'),
-              ),
+              child: FilledButton(onPressed: _done, child: const Text('Done')),
             ),
           ],
         ),

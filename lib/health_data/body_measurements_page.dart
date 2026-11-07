@@ -6,9 +6,18 @@ import 'models/body_measurements.dart';
 
 /// Manual measurements, saved separately from the paused Health Connect feature.
 class BodyMeasurementsPage extends StatefulWidget {
-  const BodyMeasurementsPage({super.key, required this.userId});
+  const BodyMeasurementsPage({
+    super.key,
+    required this.userId,
+    this.embedded = false,
+    this.closeOnSave = false,
+  });
 
   final String userId;
+
+  /// Uses the parent preferences list for scrolling when embedded.
+  final bool embedded;
+  final bool closeOnSave;
 
   @override
   State<BodyMeasurementsPage> createState() => _BodyMeasurementsPageState();
@@ -179,7 +188,13 @@ class _BodyMeasurementsPageState extends State<BodyMeasurementsPage> {
         'weightUnit': _weightUnit,
         'updatedAt': FieldValue.serverTimestamp(),
       });
-      if (mounted) setState(() => _message = 'Height, weight and BMI saved.');
+      if (mounted) {
+        if (widget.closeOnSave) {
+          Navigator.of(context).pop();
+        } else {
+          setState(() => _message = 'Height, weight and BMI saved.');
+        }
+      }
     } on FirebaseException catch (error) {
       if (mounted) {
         setState(
@@ -214,7 +229,11 @@ class _BodyMeasurementsPageState extends State<BodyMeasurementsPage> {
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 480),
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+          primary: false,
+          physics: widget.embedded
+              ? const NeverScrollableScrollPhysics()
+              : null,
+          padding: widget.embedded ? EdgeInsets.zero : const EdgeInsets.all(24),
           child: Form(
             key: _formKey,
             child: Column(
