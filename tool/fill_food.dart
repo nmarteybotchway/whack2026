@@ -66,14 +66,14 @@ final _fullSchema = {
       'type': 'array',
       'items': {
         'type': 'string',
-        'enum': [for (final c in HealthCondition.values) c.id],
+        'enum': [for (final c in HealthCondition.conditions) c.id],
       },
     },
     'personal_prefs': {
       'type': 'array',
       'items': {
         'type': 'string',
-        'enum': [for (final p in Preference.values) p.id],
+        'enum': [for (final p in Preference.preferences) p.id],
       },
     },
     'general_info': {'type': 'string'},
@@ -100,14 +100,11 @@ final _alternativesSchema = {
         'properties': {
           'health': {
             'type': 'string',
-            'enum': [
-              Food.noneKey,
-              for (final c in HealthCondition.values) c.id,
-            ],
+            'enum': [for (final c in HealthCondition.values) c.id],
           },
           'pref': {
             'type': 'string',
-            'enum': [Food.noneKey, for (final p in Preference.values) p.id],
+            'enum': [for (final p in Preference.values) p.id],
           },
           'items': {
             'type': 'array',
@@ -200,10 +197,10 @@ Future<void> _fill(
     return;
   }
 
-  final conditions = HealthCondition.values
+  final conditions = HealthCondition.conditions
       .map((c) => '- ${c.id}: ${c.label}')
       .join('\n');
-  final preferences = Preference.values
+  final preferences = Preference.preferences
       .map((p) => '- ${p.id}: ${p.label}')
       .join('\n');
   final reply = await _ask(
@@ -232,11 +229,15 @@ Future<void> _fill(
 
   final healthConditions = {
     for (final c in reply['health_conditions'] as List)
-      ?HealthCondition.fromId(c as String),
+      if (HealthCondition.fromId(c as String) case final c?
+          when c != HealthCondition.none)
+        c,
   };
   final personalPrefs = {
     for (final p in reply['personal_prefs'] as List)
-      ?Preference.fromId(p as String),
+      if (Preference.fromId(p as String) case final p?
+          when p != Preference.none)
+        p,
   };
   final generalInfo = (reply['general_info'] as String).trim();
   final food = Food(
@@ -270,7 +271,7 @@ Future<void> _fill(
 /// (one of [prefs] or none). The none/none pair, healthier substitutes for
 /// anyone, is only asked for when [generalInfo] gives a reason to avoid the
 /// food.
-Future<Map<HealthCondition?, Map<Preference?, List<String>>>> _alternatives(
+Future<Map<HealthCondition, Map<Preference, List<String>>>> _alternatives(
   OpenRouterService ai,
   String name,
   Set<HealthCondition> conditions,
@@ -278,16 +279,20 @@ Future<Map<HealthCondition?, Map<Preference?, List<String>>>> _alternatives(
   String generalInfo,
 ) async {
   final pairs = [
-    for (final c in [null, ...conditions])
-      for (final p in [null, ...prefs])
-        if (c != null || p != null || generalInfo.isNotEmpty) (c, p),
+    for (final c in [HealthCondition.none, ...conditions])
+      for (final p in [Preference.none, ...prefs])
+        if (c != HealthCondition.none ||
+            p != Preference.none ||
+            generalInfo.isNotEmpty)
+          (c, p),
   ];
   if (pairs.isEmpty) return const {};
 
-  String describe(HealthCondition? c, Preference? p) => [
-    if (c != null) 'has ${c.label.toLowerCase()}',
-    if (p != null) 'follows ${p.label}',
-    if (c == null && p == null) 'is healthy (avoiding: $generalInfo)',
+  String describe(HealthCondition c, Preference p) => [
+    if (c != HealthCondition.none) 'has ${c.label.toLowerCase()}',
+    if (p != Preference.none) 'follows ${p.label}',
+    if (c == HealthCondition.none && p == Preference.none)
+      'is healthy (avoiding: $generalInfo)',
   ].join(' and ');
 
   final reply = await askJson(
@@ -297,8 +302,8 @@ Future<Map<HealthCondition?, Map<Preference?, List<String>>>> _alternatives(
     'suitable for that person, considering BOTH their health condition and '
     'their preference. Short names only. Return one {health, pref, items} '
     'entry per line, using the keys exactly as given.\n\n'
-    '${pairs.map((e) => '- health "${e.$1?.id ?? Food.noneKey}", pref '
-        '"${e.$2?.id ?? Food.noneKey}": someone who ${describe(e.$1, e.$2)}').join('\n')}'
+    '${pairs.map((e) => '- health "${e.$1.id}", pref "${e.$2.id}": '
+        'someone who ${describe(e.$1, e.$2)}').join('\n')}'
     '\n\nReply as JSON.',
     _alternativesSchema,
     timeout: const Duration(minutes: 3),
@@ -322,11 +327,9 @@ Future<Map<HealthCondition?, Map<Preference?, List<String>>>> _alternatives(
     ],
     final other => throw FormatException('Bad alternatives: $other'),
   };
-  final wanted = {
-    for (final (c, p) in pairs) (c?.id ?? Food.noneKey, p?.id ?? Food.noneKey),
-  };
+  final wanted = {for (final (c, p) in pairs) (c.id, p.id)};
   final id = Food.idFor(name);
-  final result = <HealthCondition?, Map<Preference?, List<String>>>{};
+  final result = <HealthCondition, Map<Preference, List<String>>>{};
   for (final (h, p, items) in cells) {
     // Only keep pairs that were asked for, which also enforces the none/none
     // rule.
@@ -338,9 +341,8 @@ Future<Map<HealthCondition?, Map<Preference?, List<String>>>> _alternatives(
           alt,
     ];
     if (alts.isEmpty) continue;
-    final c = h == Food.noneKey ? null : HealthCondition.fromId(h);
-    final pref = p == Food.noneKey ? null : Preference.fromId(p);
-    (result[c] ??= {})[pref] = alts;
+    // Known IDs, since only pairs that were asked for get this far.
+    (result[HealthCondition.fromId(h)!] ??= {})[Preference.fromId(p)!] = alts;
   }
   final missing = wanted.length - result.values.expand((r) => r.keys).length;
   if (missing > 0) {
