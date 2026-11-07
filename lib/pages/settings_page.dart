@@ -3,6 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../health_data/body_measurements_card.dart';
+import '../health_data/health_tracking_card.dart';
+import '../health_data/health_tracking_controller.dart';
 
 /// Common religious beliefs offered as quick-pick options.
 const _religionOptions = [
@@ -30,9 +32,10 @@ const _dietaryOptions = [
 
 /// User preferences stored in Firestore at `users/{uid}`.
 class SettingsPage extends StatefulWidget {
-  const SettingsPage({super.key, required this.user});
+  const SettingsPage({super.key, required this.user, required this.tracking});
 
   final User user;
+  final HealthTrackingController tracking;
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -179,6 +182,8 @@ class _SettingsPageState extends State<SettingsPage> {
           key: ValueKey(widget.user.uid),
           userId: widget.user.uid,
         ),
+        const SizedBox(height: 8),
+        HealthTrackingCard(tracking: widget.tracking),
         if (_saving) ...[
           const SizedBox(height: 16),
           const LinearProgressIndicator(),
