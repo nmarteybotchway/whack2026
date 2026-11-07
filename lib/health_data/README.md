@@ -22,8 +22,24 @@ replaces the current measurements rather than creating a history.
 Deploy `firestore.rules` to enable owner-only access to the new profile document:
 `firebase deploy --only firestore:rules --project whack-2026-c7898`.
 
-The standalone Health tab has been removed. The Health Connect implementation
-is preserved below for later but is not routed into the current UI.
+The standalone Health tab has been removed. A matching Health tracking card in
+Preferences opens connection, reading and deletion controls. On first Android
+launch after sign-in, an optional introduction explains the blood-pressure upload
+and offers Connect and upload or Not now. No system permission prompt or health
+read is made before opting in.
+
+The introduction dismissal is saved on this installation using Android native
+SharedPreferences. Tracking opt-in is saved per Firebase UID on this device;
+changing accounts creates a new session controller. On restart, previously opted-in
+tracking resumes only when read permission is still present. Stopping tracking
+persists the disabled state; revoking Health Connect access is a separate action.
+Android backup/restore may restore native preferences during reinstall.
+
+Collection is managed by HomePage's controller rather than an individual editor.
+It checks blood pressure every minute while the app is foregrounded, including
+when the editor is closed, and stops on sign-out/disposal. It is not a background
+service or live sensor connection. Existing rules and blood-pressure paths are
+unchanged. Manual height, weight and BMI remain independent.
 
 ---
 
@@ -37,13 +53,13 @@ Android Health Connect BloodPressureRecord
   -> BloodPressureSource
   -> BloodPressureSync
   -> users/{uid}/bloodPressure/{healthConnectRecordId}
-  -> Firestore snapshots -> Health tab
+  -> Firestore snapshots -> Preferences health tracking editor
 ```
 
 Both systolic and diastolic values come from the same source record, in mmHg.
 Source IDs, package name, device metadata (when present), measurement time and
 source modification time are preserved. No Health Connect write permission is
-requested. The Health tab asks explicitly before reading/uploading.
+requested. The introduction and Preferences editor ask explicitly before reading/uploading.
 
 ## Setup
 
@@ -61,13 +77,14 @@ No service-account key or Health Connect API key is required in the app.
    grant access only to this feature's collection.
 5. Run on an Android phone (minimum API 28) with Health Connect available; older
    Android versions may require installing/updating the Health Connect app.
-6. Sign in, open Health, choose Connect and upload, and grant blood pressure read
+6. Sign in, open Preferences → Health tracking, choose Connect and upload, and grant blood pressure read
    access. Enable your source app's Health Connect write permission separately.
 
 ## Behaviour and limits
 
 - Checks a rolling 29-day window on connect, resume, and every 60 seconds while
-  the Health tab is open. It stops when the tab is disposed or the app pauses.
+  opted in and the app is foregrounded. Closing the editor keeps tracking active;
+  sign-out or stopping tracking ends it.
 - Uses paginated native reads. A failed read never triggers cloud deletions.
 - Reconciles corrections and deletions inside that window; older uploaded records
   remain until explicitly deleted. This is a bounded prototype sync, not a full
@@ -88,9 +105,9 @@ No service-account key or Health Connect API key is required in the app.
 
 ## Verification
 
-Implementation environment: Flutter/Dart SDK was unavailable (`flutter: command
-not found`), so dependency resolution, compilation, and automated tests have not
-been run. Manifest XML, Firebase JSON, and `git diff --check` were checked.
+Dart static analysis is available. Flutter tests cannot start in this sandbox
+because binding a localhost server socket is denied. Android permission and
+first-install flows still require device/emulator verification.
 
 Run `flutter analyze`, `flutter test test/health_data/`, and
 `flutter build apk --debug` after dependency resolution. On a real device, verify

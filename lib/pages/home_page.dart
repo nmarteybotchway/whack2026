@@ -2,6 +2,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../diet/diet_history_page.dart';
+import '../health_data/health_tracking_controller.dart';
+import '../health_data/health_tracking_card.dart';
 import '../scan/scan_page.dart';
 import 'settings_page.dart';
 
@@ -34,6 +36,25 @@ const _tabs = [..._leftTabs, ..._rightTabs];
 
 class _HomePageState extends State<HomePage> {
   int _index = 0;
+  late final HealthTrackingController _tracking;
+
+  @override
+  void initState() {
+    super.initState();
+    _tracking = HealthTrackingController(widget.user.uid);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _tracking.initialize();
+      if (mounted && !_tracking.introSeen) {
+        await showHealthTrackingIntro(context, _tracking);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _tracking.dispose();
+    super.dispose();
+  }
 
   void _scan() {
     Navigator.of(context)
@@ -61,7 +82,11 @@ class _HomePageState extends State<HomePage> {
           key: ValueKey(widget.user.uid),
           userId: widget.user.uid,
         ),
-        2 => SettingsPage(key: ValueKey(widget.user.uid), user: widget.user),
+        2 => SettingsPage(
+          key: ValueKey(widget.user.uid),
+          user: widget.user,
+          tracking: _tracking,
+        ),
         _ => const SizedBox.shrink(),
       },
       bottomNavigationBar: _BottomBar(

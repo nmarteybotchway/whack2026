@@ -29,6 +29,24 @@ class MainActivity : FlutterFragmentActivity() {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "sentinel/health_connect")
             .setMethodCallHandler { call, result ->
+                val preferences = getSharedPreferences("sentinel_health", MODE_PRIVATE)
+                if (call.method == "trackingSettings") {
+                    val uid = call.argument<String>("userId") ?: ""
+                    result.success(mapOf(
+                        "introSeen" to preferences.getBoolean("introSeen", false),
+                        "enabled" to preferences.getBoolean("enabled:$uid", false)
+                    ))
+                    return@setMethodCallHandler
+                }
+                if (call.method == "saveTrackingSettings") {
+                    val uid = call.argument<String>("userId") ?: ""
+                    val editor = preferences.edit()
+                    call.argument<Boolean>("introSeen")?.let { editor.putBoolean("introSeen", it) }
+                    call.argument<Boolean>("enabled")?.let { editor.putBoolean("enabled:$uid", it) }
+                    if (editor.commit()) result.success(null)
+                    else result.error("settings_failed", "Could not save health preferences.", null)
+                    return@setMethodCallHandler
+                }
                 val status = HealthConnectClient.getSdkStatus(this)
                 if (call.method == "availability") {
                     result.success(when (status) {
@@ -38,6 +56,15 @@ class MainActivity : FlutterFragmentActivity() {
                     })
                 } else if (status != HealthConnectClient.SDK_AVAILABLE) {
                     result.error("unavailable", "Install or update Health Connect on a supported Android phone.", null)
+                } else if (call.method == "hasPermission") {
+                    scope.launch {
+                        try {
+                            result.success(HealthConnectClient.getOrCreate(this@MainActivity)
+                                .permissionController.getGrantedPermissions().contains(permission))
+                        } catch (error: Exception) {
+                            result.error("permission_check", "Could not check health permission.", null)
+                        }
+                    }
                 } else if (call.method == "requestPermission") {
                     if (pendingPermission != null) {
                         result.error("busy", "A permission request is already open.", null)
