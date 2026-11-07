@@ -43,6 +43,27 @@ class DietDay {
   }
 }
 
+/// Thrown by [DietWindowService.save] when the purchase day is older than
+/// the window, so the caller can tell the user instead of the day being
+/// saved and immediately pruned.
+class DietDayOutOfWindowException implements Exception {
+  const DietDayOutOfWindowException(this.day, this.cutoff);
+
+  /// The rejected purchase day.
+  final DateTime day;
+
+  /// The oldest day the window accepts.
+  final DateTime cutoff;
+
+  String get message =>
+      'Only the last ${DietWindowService.window.inDays} days are kept, so '
+      'receipts from before ${cutoff.year}-${cutoff.month.toString().padLeft(2, '0')}-'
+      '${cutoff.day.toString().padLeft(2, '0')} cannot be saved.';
+
+  @override
+  String toString() => message;
+}
+
 /// Interface for the diet persistence the window service reads and prunes.
 /// [ReceiptStore] is the Firebase implementation; tests substitute fakes.
 abstract class DietStorage {
@@ -120,10 +141,12 @@ class DietWindowService {
   /// Counts back whole calendar days rather than subtracting a duration:
   /// a 14×24h subtraction drifts an hour across DST changes and would
   /// misclassify the boundary day.
-  DateTime cutoff() {
-    final n = _now();
-    return DateTime(n.year, n.month, n.day - window.inDays);
-  }
+  DateTime cutoff() => cutoffFor(_now());
+
+  /// The oldest in-window day relative to [now], at local midnight. Used by
+  /// the receipt review sheet to bound its date picker.
+  static DateTime cutoffFor(DateTime now) =>
+      DateTime(now.year, now.month, now.day - window.inDays);
 
   /// Live stream of the window, newest first. Emits the refreshed window
   /// immediately on listen, then again whenever [save] or [deleteDay]
@@ -192,7 +215,14 @@ class DietWindowService {
   /// Saves foods under [day] (through storage), trims the window so expired
   /// days are removed in the same breath, and wakes [recentDaysStream]
   /// listeners with the refreshed window.
+  ///
+  /// Throws [DietDayOutOfWindowException] without saving when [day] is
+  /// before [cutoff]; such a day would be pruned straight away.
   Future<void> save(List<ReceiptItem> items, DateTime day) async {
+    final cutoffDay = cutoff();
+    if (DateTime(day.year, day.month, day.day).isBefore(cutoffDay)) {
+      throw DietDayOutOfWindowException(day, cutoffDay);
+    }
     await storage.save(items, day);
     _version++;
     await recentDays();

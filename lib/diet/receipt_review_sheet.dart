@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'diet_window_service.dart';
 import 'receipt_parser.dart';
 
 /// Result of reviewing a scanned receipt: the confirmed items and the day
@@ -48,11 +49,13 @@ class _ReceiptReviewSheetState extends State<ReceiptReviewSheet> {
   }
 
   Future<void> _pickDate() async {
+    final now = DateTime.now();
     final picked = await showDatePicker(
       context: context,
       initialDate: _day,
-      firstDate: DateTime.now().subtract(const Duration(days: 365)),
-      lastDate: DateTime.now(),
+      // Older days fall outside the diet window and would not be kept.
+      firstDate: DietWindowService.cutoffFor(now),
+      lastDate: now,
     );
     if (picked != null) setState(() => _day = picked);
   }

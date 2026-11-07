@@ -286,10 +286,6 @@ confirm each one on the emulator or the deployed rules:
   `nutrientScore`/`nutrientTotals`/`nutrientUpdatedAt` (`NutrientScoreService`)
   are not in the `users/{uid}` allow-list, so the checked-in rules would
   reject them.
-- `ReceiptStore.save` follows its merge `set` with
-  `update({'nutrition': ...})`, which leaves `updatedAt` unchanged. The
-  `diet/{dayId}` rule requires `updatedAt == request.time` on every update,
-  so that second write would be denied.
 - The `diet/{dayId}` rule reads `foods[0]`, so a day with an empty `foods`
   list cannot be written.
 - `users/{uid}/receipts` has rules and assistant read support but no writer.

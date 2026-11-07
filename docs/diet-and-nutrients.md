@@ -58,7 +58,7 @@ flowchart TD
 
 | Path | Written by | Read by | Fields |
 | --- | --- | --- | --- |
-| `users/{uid}/diet/{yyyy-MM-dd}` | `ReceiptStore.save` (via `DietWindowService.save`); deleted by `ReceiptStore.delete` / `deleteOlderThan` | `ReceiptStore.history()` → `DietWindowService` | `date` (Timestamp, local midnight), `foods` (string array, `arrayUnion`), `nutrition` (map shorthand → double, 2 dp), `updatedAt` (server timestamp) |
+| `users/{uid}/diet/{yyyy-MM-dd}` | `ReceiptStore.save` (via `DietWindowService.save`); deleted by `ReceiptStore.delete` / `deleteOlderThan` | `ReceiptStore.history()` → `DietWindowService` | `date` (Timestamp, local midnight), `foods` (string array, `arrayUnion`), `nutrition` (map shorthand → double, `FieldValue.increment` per receipt, each increment rounded to 2 dp), `updatedAt` (server timestamp) |
 | `users/{uid}/foodEntries/{entryId}` | `AssistantRepository` (`propose_food_log`), see `docs/assistant.md` | `ReceiptStore.loggedIntakeSince`, `DietHistoryPage` "Manual food logs" | `name`, `localDate` (Timestamp), `localDay` (string), `kind` (`eaten`/`purchased`), `source` (`assistant`), `createdAt`, optional `amount` |
 | `nutritionCache/{lower-cased food name}` | `NutritionService.nutrientsFor` (top-level, shared by all users) | `NutritionService.nutrientsFor` | `nutrition` (map), `updatedAt` |
 | `users/{uid}` | `NutrientScoreService.save` (merge) | `NutrientScoreService.load` | `nutrientScore`, `nutrientTotals`, `nutrientUpdatedAt` |
@@ -73,7 +73,7 @@ rejected (see Issues).
 
 ## Receipt scanning
 
-`ReceiptScanPage(userId:)` is opened from `DietHistoryPage` ("Scan receipt"),
+`ReceiptScanPage(userId:, diet:)` is opened from `DietHistoryPage` ("Scan receipt"),
 only on Android/iOS (`ReceiptScanPage.isSupported`). It uses the back camera
 at `ResolutionPreset.veryHigh` and releases the camera on
 `AppLifecycleState.inactive`, as the product scanner does.
@@ -87,7 +87,10 @@ On capture (`_capture`):
      then `parseReceiptItems(result.text)`.
 2. No items → snackbar "No items found. Make sure the whole receipt fills the frame…".
 3. `showReceiptReview(context, items)`; null or empty → stop.
-4. `DietWindowService(widget.userId).save(reviewed.items, reviewed.day)`.
+4. `save(reviewed.items, reviewed.day)` on the `diet` passed in by
+   `DietHistoryPage` (or a new `DietWindowService(widget.userId)` if none).
+   A `DietDayOutOfWindowException` is shown as a snackbar and the page stays
+   open; other errors are shown inline.
 5. Pop with the number of items saved; `DietHistoryPage` shows
    "Saved N foods to your diet."
 
@@ -137,8 +140,8 @@ Used only for the ML Kit fallback. Line by line:
 ### Review sheet
 
 `ReceiptReviewSheet` lists item names with a delete button each, and a date
-tile "When did you get this?" (default today; `showDatePicker` from 365 days
-ago to today). "Save N items" returns `ReviewedReceipt(items, day)`; "Retake
+tile "When did you get this?" (default today; `showDatePicker` from
+`DietWindowService.cutoffFor(now)`, the window start, to today). "Save N items" returns `ReviewedReceipt(items, day)`; "Retake
 photo" returns null. Prices and quantities are shown nowhere and are not
 stored.
 
@@ -148,10 +151,12 @@ stored.
 
 - `save(items, day)`:
   1. `names = items.map((i) => i.name)`; `totals = await nutrition.totalsFor(names)`.
-  2. `set` on `diet/{yyyy-MM-dd}` with merge: `date` (local midnight),
-     `foods: arrayUnion(names)`, `nutrition: {}`, `updatedAt: serverTimestamp()`.
-  3. If `totals` is non-empty, re-read the doc, add `totals` to its existing
-     `nutrition`, round to 2 dp, and `update` `nutrition`.
+  2. One `set` on `diet/{yyyy-MM-dd}` with merge, built by `dayWrite`:
+     `date` (local midnight), `foods: arrayUnion(names)`,
+     `nutrition: {key: FieldValue.increment(total rounded to 2 dp)}`, and
+     `updatedAt: serverTimestamp()`. Same-day receipts add up server-side.
+     `nutrition` is left out when `totals` is empty, so an existing map is
+     not replaced by `{}`.
 - `history()`: snapshots ordered by `date` descending, `limit(90)`.
 - `deleteOlderThan(cutoff)`: batch-deletes days with `date < cutoff` (not
   called by any code; the window service prunes via `delete` instead).
@@ -220,8 +225,11 @@ wraps `ReceiptStore` (`loadAll` = first snapshot of `history()`,
 - `recentFoods()`: all food names in the mirror, newest day first,
   duplicates kept.
 - `recentNutritionTotals()`: nutrient totals summed across the mirror.
-- `save(items, day)`: `storage.save`, bump `_version`, then `recentDays()`
-  (prunes).
+- `cutoffFor(now)` (static): the same cutoff for a given time; the review
+  sheet uses it as the date picker's `firstDate`.
+- `save(items, day)`: throws `DietDayOutOfWindowException` (with a
+  user-facing `message`) without writing if `day` is before the cutoff;
+  otherwise `storage.save`, bump `_version`, then `recentDays()` (prunes).
 - `deleteDay(dayId)`: delete from storage and mirror, bump `_version`.
 
 Callers: `ReceiptScanPage` (save), `DietHistoryPage` (stream, delete),
@@ -304,7 +312,10 @@ footnote.
 `DietHistoryPage(userId:)`:
 
 - "Scan receipt" opens `ReceiptScanPage`; "Nutrient tracker" opens the tracker.
-- A `StreamBuilder` over `DietWindowService(userId).recentDaysStream()` shows
+- It is a `StatefulWidget` that creates one `DietWindowService` and its
+  `recentDaysStream()` in its state, and passes that service to
+  `ReceiptScanPage`, so a saved receipt refreshes the list straight away.
+- A `StreamBuilder` over that stream shows
   one `_DayCard` per day: food chips and a `_NutrientBox` per stored
   nutrient, and "Delete day" (with confirmation) → `deleteDay`.
 - "Manual food logs": a live query on `users/{uid}/foodEntries` ordered by
@@ -370,14 +381,15 @@ The score is also computed on raw totals, not on per-day averages.
 
 | Test | Covers |
 | --- | --- |
-| `test/diet/diet_window_service_test.dart` | cutoff exactly two weeks back at midnight; in-window days newest first; stale days deleted and excluded; `recentFoods` keeps duplicates; `recentNutritionTotals` sums only in-window days; `save` writes through and prunes; `deleteDay` removes from storage and mirror (fake `DietStorage`, injected `now`) |
+| `test/diet/diet_window_service_test.dart` | cutoff exactly two weeks back at midnight; in-window days newest first; stale days deleted and excluded; `recentFoods` keeps duplicates; `recentNutritionTotals` sums only in-window days; `save` writes through and prunes; a second same-day save keeps the earlier nutrition; `save` rejects days before the window and accepts the oldest in-window day; `cutoffFor`; `deleteDay` removes from storage and mirror (fake `DietStorage`, injected `now`) |
 | `test/diet/nutrient_insights_test.dart` | averaging over days since tracking began and gap ranking; records outside the window ignored |
 | `test/diet/nutrition_service_test.dart` | USDA name → shorthand and units; folate DFE preference and fallback; MG → UG; IU vitamin D entries |
+| `test/diet/receipt_store_test.dart` | `ReceiptStore.dayWrite` increments each nutrient so same-day receipts add up; leaves `nutrition` out when there is nothing to add |
 | `test/diet/receipt_parser_test.dart` | price-only lines, single-line name+price, skip lines, skip keywords mid-name, quantity prefix, comma decimals/currency, unpaired names, `toMap`/`fromMap`, tax flag, glued price, qty-at-unit-price |
-| `test/diet/veryfi_service_test.dart` | line-item mapping, total-only items, signed headers and base64 body, `VeryfiException` on non-200 (uses `MockClient`) |
+| `test/diet/veryfi_service_test.dart` | line-item mapping, total-only items, multi-line descriptions from a real Veryfi response, signed headers and base64 body, `VeryfiException` on non-200 (uses `MockClient`) |
 
-Not covered: `ReceiptStore` (Firestore), `NutritionService.nutrientsFor`
-caching / USDA HTTP, `NutrientInsights.load`, the UI pages, and
+Not covered: `ReceiptStore` against Firestore (only `dayWrite` is tested),
+`NutritionService.nutrientsFor` caching / USDA HTTP, `NutrientInsights.load`, the UI pages, and
 `NutrientScoreService`.
 
 ```sh
@@ -386,36 +398,19 @@ flutter test test/diet
 
 ## Known issues
 
-1. **Same-day receipts likely lose earlier nutrition.** `ReceiptStore.save`
-   writes `'nutrition': <String, double>{}` with `SetOptions(merge: true)`.
-   Firestore treats an empty map in a merge as a field to set, which replaces
-   the existing `nutrition` map; the following read-modify-write then only
-   has the new receipt's totals. The day's nutrition would reflect only the
-   last receipt saved.
-2. **Back-dated receipts older than the window are deleted immediately.**
-   The review sheet allows dates up to 365 days ago, but
-   `DietWindowService.save` prunes right after saving, so a day before the
-   cutoff is written and then deleted while the user is told "Saved N foods".
-3. **History page may not refresh after a scan.** `ReceiptScanPage` saves
-   through its own `DietWindowService` instance, so the history page's
-   stream (a different instance) only sees the new day when it is rebuilt or
-   after its hourly refresh. `DietHistoryPage` is a `StatelessWidget` that
-   creates a new `DietWindowService` and stream in every `build`.
-4. **`nutrientScore` writes are blocked by the rules.** The `users/{uid}`
+1. **`nutrientScore` writes are blocked by the rules.** The `users/{uid}`
    update rule in `firestore.rules` only allows `religion`, `dietary`,
    `health_conditions`, `updatedAt`. `NutrientScoreService.save` is unused
    today, but would fail once wired. The same rule also blocks the scan
    sheet's `ignored_swap_items` write (see `docs/scanning.md`).
-5. **Garden is not wired and uses different targets** (see table above); the
+2. **Garden is not wired and uses different targets** (see table above); the
    progress is hard-coded to 0.62.
-6. **`_Tree.build` creates a new `RiveWidgetController` on every build and
+3. **`_Tree.build` creates a new `RiveWidgetController` on every build and
    never disposes it.**
-7. **Quantities are ignored for nutrition.** Each receipt line and each
+4. **Quantities are ignored for nutrition.** Each receipt line and each
    logged food counts as one 100 g serving. `foods` uses `arrayUnion`, so a
    food bought twice on the same day is listed once.
-8. **Cache key is the raw lower-cased name.** `nutritionCache/{name}` is used
+5. **Cache key is the raw lower-cased name.** `nutritionCache/{name}` is used
    as a document id; names containing `/` (for example "1/2 gal milk") are
    not valid document ids and may make the lookup throw.
-9. `ReceiptStore.deleteOlderThan` is unused; `test/diet/veryfi_service_test.dart`
-   has two tests with the same name ("keeps items where Veryfi only filled
-   the line total").
+6. `ReceiptStore.deleteOlderThan` is unused.

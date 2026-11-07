@@ -50,7 +50,7 @@ void main() {
     expect(items.single.quantity, 1);
   });
 
-  test('keeps items where Veryfi only filled the line total', () async {
+  test('parses multi-line descriptions from a real Veryfi response', () async {
     // Real Veryfi response shape: price and qty null, total present.
     const responseBody = '''
     {"line_items": [

@@ -7,10 +7,22 @@ import 'receipt_scan_page.dart';
 
 /// Diet history: scan grocery receipts and browse the stored diet, organised
 /// by the day the food was bought.
-class DietHistoryPage extends StatelessWidget {
+class DietHistoryPage extends StatefulWidget {
   const DietHistoryPage({super.key, required this.userId});
 
   final String userId;
+
+  @override
+  State<DietHistoryPage> createState() => _DietHistoryPageState();
+}
+
+class _DietHistoryPageState extends State<DietHistoryPage> {
+  /// Created once so rebuilds keep the same stream, and shared with the scan
+  /// page so a saved receipt wakes this page's stream straight away.
+  late final DietWindowService _diet = DietWindowService(widget.userId);
+  late final Stream<List<DietDay>> _days = _diet.recentDaysStream();
+
+  String get userId => widget.userId;
 
   Future<void> _scan(BuildContext context) async {
     if (!ReceiptScanPage.isSupported) {
@@ -24,7 +36,9 @@ class DietHistoryPage extends StatelessWidget {
       return;
     }
     final saved = await Navigator.of(context).push<int>(
-      MaterialPageRoute(builder: (_) => ReceiptScanPage(userId: userId)),
+      MaterialPageRoute(
+        builder: (_) => ReceiptScanPage(userId: userId, diet: _diet),
+      ),
     );
     if (saved == null || saved == 0 || !context.mounted) return;
     ScaffoldMessenger.of(
@@ -73,7 +87,7 @@ class DietHistoryPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final diet = DietWindowService(userId);
+    final diet = _diet;
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -101,7 +115,7 @@ class DietHistoryPage extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         StreamBuilder<List<DietDay>>(
-          stream: diet.recentDaysStream(),
+          stream: _days,
           builder: (context, snapshot) {
             if (snapshot.hasError) {
               return const Text(

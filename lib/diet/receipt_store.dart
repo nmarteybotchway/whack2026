@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import 'nutrition_service.dart';
 import 'receipt_parser.dart';
@@ -49,30 +50,35 @@ class ReceiptStore {
     final dateId = _dateId(day);
     final names = items.map((item) => item.name).toList();
     final totals = await nutrition.totalsFor(names);
-    await _diet.doc(dateId).set({
-      'date': Timestamp.fromDate(DateTime(day.year, day.month, day.day)),
-      'foods': FieldValue.arrayUnion(names),
-      'nutrition': <String, double>{},
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-    if (totals.isEmpty) return;
-
-    // Merge into whatever the day already accumulated.
-    final current = await _diet.doc(dateId).get();
-    final existing = <String, double>{
-      for (final entry in (current.data()?['nutrition'] as Map? ?? {}).entries)
-        if (entry.value is num) '${entry.key}': (entry.value as num).toDouble(),
-    };
-    totals.forEach((key, value) {
-      existing[key] = (existing[key] ?? 0) + value;
-    });
-    await _diet.doc(dateId).update({
-      'nutrition': {
-        for (final entry in existing.entries)
-          entry.key: double.parse(entry.value.toStringAsFixed(2)),
-      },
-    });
+    await _diet.doc(dateId).set(
+      dayWrite(names, totals, day),
+      SetOptions(merge: true),
+    );
   }
+
+  /// The merge write [save] sends for one receipt on [day].
+  ///
+  /// Each nutrient is incremented server-side so earlier receipts for the
+  /// same day keep their totals. The `nutrition` key is omitted when there
+  /// is nothing to add, because merging an empty map would replace the
+  /// day's existing nutrition with `{}`.
+  @visibleForTesting
+  static Map<String, Object> dayWrite(
+    List<String> names,
+    Map<String, double> totals,
+    DateTime day,
+  ) => {
+    'date': Timestamp.fromDate(DateTime(day.year, day.month, day.day)),
+    'foods': FieldValue.arrayUnion(names),
+    if (totals.isNotEmpty)
+      'nutrition': {
+        for (final entry in totals.entries)
+          entry.key: FieldValue.increment(
+            double.parse(entry.value.toStringAsFixed(2)),
+          ),
+      },
+    'updatedAt': FieldValue.serverTimestamp(),
+  };
 
   /// Nutrient totals per day since [start] for foods logged through the
   /// assistant (eaten or purchased), looked up individually. Receipt days
