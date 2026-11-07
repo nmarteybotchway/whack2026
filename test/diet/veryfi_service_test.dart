@@ -34,18 +34,41 @@ void main() {
     expect(items[1].quantity, 3);
   });
 
-  test('derives unit price from line total when price is missing', () async {
+  test('keeps items where Veryfi only filled the line total', () async {
+    // Real Veryfi responses leave price and qty null with only total set;
+    // such items are kept as a single purchase of the line total.
     const responseBody = '''
-    {"line_items": [{"description": "Bread", "price": 0, "qty": 2, "total": 3.0}]}
+    {"line_items": [{"description": "Bread", "price": null, "qty": null, "total": 3.0}]}
     ''';
     final service = VeryfiService(
-      client: MockClient((request) async => http.Response(responseBody, 200)),
+      client: MockClient((request) async => http.Response(responseBody, 201)),
     );
 
     final items = await service.processReceipt(Uint8List.fromList([1]), 'r.jpg');
 
-    expect(items.single.price, closeTo(1.5, 0.001));
-    expect(items.single.quantity, 2);
+    expect(items.single.price, 3.0);
+    expect(items.single.quantity, 1);
+  });
+
+  test('keeps items where Veryfi only filled the line total', () async {
+    // Real Veryfi response shape: price and qty null, total present.
+    const responseBody = '''
+    {"line_items": [
+      {"description": "MIRAS OLIJFOLIE\\n(GLAS) 1L", "price": null, "qty": null, "total": 3.99},
+      {"description": "ULKER PETIBOR BISKUVI 1KG", "price": null, "qty": null, "total": 2.49}
+    ], "total": 14.21}
+    ''';
+    final service = VeryfiService(
+      client: MockClient((request) async => http.Response(responseBody, 201)),
+    );
+
+    final items = await service.processReceipt(Uint8List.fromList([1]), 'r.jpg');
+
+    expect(items, hasLength(2));
+    expect(items[0].name, 'MIRAS OLIJFOLIE (GLAS) 1L');
+    expect(items[0].price, 3.99);
+    expect(items[0].quantity, 1);
+    expect(items[1].price, 2.49);
   });
 
   test('sends signed headers and base64 file data', () async {
@@ -53,7 +76,7 @@ void main() {
     final service = VeryfiService(
       client: MockClient((request) async {
         captured = request;
-        return http.Response(jsonEncode({'line_items': []}), 200);
+        return http.Response(jsonEncode({'line_items': []}), 201);
       }),
     );
 
