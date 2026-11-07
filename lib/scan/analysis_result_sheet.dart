@@ -227,17 +227,45 @@ String _newsFoodName(ProductIdentification product) {
 /// Food news alert for a scanned product: a green no-news card when the
 /// database has nothing, or an alert card with local news (always listed
 /// before general info) when it does.
-class _FoodNewsAlert extends StatelessWidget {
+class _FoodNewsAlert extends StatefulWidget {
   const _FoodNewsAlert({required this.service, required this.foodName});
 
   final FoodNewsService service;
   final String foodName;
 
   @override
+  State<_FoodNewsAlert> createState() => _FoodNewsAlertState();
+}
+
+/// Fetches once per [_FoodNewsAlert.foodName], so parent rebuilds (e.g.
+/// toggling the swap checkbox) don't refetch.
+class _FoodNewsAlertState extends State<_FoodNewsAlert> {
+  late Future<FoodNewsResult> _news;
+
+  @override
+  void initState() {
+    super.initState();
+    _news = widget.service.getNews(widget.foodName);
+  }
+
+  @override
+  void didUpdateWidget(_FoodNewsAlert oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.service != widget.service ||
+        oldWidget.foodName != widget.foodName) {
+      _news = widget.service.getNews(widget.foodName);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return FutureBuilder<FoodNewsResult>(
-      future: service.getNews(foodName),
+      future: _news,
       builder: (context, snap) {
+        if (snap.hasError) {
+          debugPrint('Food news failed for ${widget.foodName}: ${snap.error}');
+          return const _LoadFailedCard('Couldn’t load food news.');
+        }
         if (!snap.hasData) {
           return const Padding(
             padding: EdgeInsets.all(16),
@@ -317,7 +345,7 @@ class _FoodNewsAlert extends StatelessWidget {
 /// signed-in user's preferences and health data: a green "safe to buy" card
 /// when nothing applies, a neutral card when the food isn't in the database,
 /// or a red card with the reasons and what to buy instead.
-class _RecommendationCard extends StatelessWidget {
+class _RecommendationCard extends StatefulWidget {
   const _RecommendationCard({
     required this.service,
     required this.userId,
@@ -331,10 +359,46 @@ class _RecommendationCard extends StatelessWidget {
   final bool hideAlternatives;
 
   @override
+  State<_RecommendationCard> createState() => _RecommendationCardState();
+}
+
+/// Fetches once per user and food, so toggling [hideAlternatives] (the swap
+/// checkbox) just re-renders the loaded verdict.
+class _RecommendationCardState extends State<_RecommendationCard> {
+  late Future<FoodRecommendation> _recommendation;
+
+  Future<FoodRecommendation> _load() => widget.service.recommendFor(
+    uid: widget.userId,
+    foodName: widget.foodName,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _recommendation = _load();
+  }
+
+  @override
+  void didUpdateWidget(_RecommendationCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.service != widget.service ||
+        oldWidget.userId != widget.userId ||
+        oldWidget.foodName != widget.foodName) {
+      _recommendation = _load();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return FutureBuilder<FoodRecommendation>(
-      future: service.recommendFor(uid: userId, foodName: foodName),
+      future: _recommendation,
       builder: (context, snap) {
+        if (snap.hasError) {
+          debugPrint(
+            'Recommendation failed for ${widget.foodName}: ${snap.error}',
+          );
+          return const _LoadFailedCard('Couldn’t load a recommendation.');
+        }
         if (!snap.hasData) {
           return const Padding(
             padding: EdgeInsets.all(16),
@@ -439,7 +503,7 @@ class _RecommendationCard extends StatelessWidget {
                   const SizedBox(height: 6),
                   Text(_boostText(r).trim(), style: theme.textTheme.bodySmall),
                 ],
-                if (!hideAlternatives && r.alternatives.isNotEmpty) ...[
+                if (!widget.hideAlternatives && r.alternatives.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Text('Try instead', style: theme.textTheme.titleSmall),
                   const SizedBox(height: 4),
@@ -507,6 +571,31 @@ class _RecommendationCard extends StatelessWidget {
     'Pregnancy' => 'pregnant',
     _ => label.toLowerCase(),
   };
+}
+
+/// Neutral card shown in place of a section whose data failed to load.
+class _LoadFailedCard extends StatelessWidget {
+  const _LoadFailedCard(this.message);
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      color: theme.colorScheme.surfaceContainerHighest,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Icon(Icons.cloud_off, color: theme.colorScheme.onSurfaceVariant),
+            const SizedBox(width: 8),
+            Expanded(child: Text(message, style: theme.textTheme.bodyMedium)),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// Notes the nutrients [r]'s food would top up, or an empty string.

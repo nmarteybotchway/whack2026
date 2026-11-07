@@ -32,13 +32,16 @@ with `nutrientTargets` (`lib/diet/nutrient_insights.dart`):
 | `good` | otherwise | – |
 | `high` | limit nutrients (sodium) only: > 100% of limit | `highNutrients` |
 
-If nothing has been tracked (`insights.isEmpty`), or the insights read throws
-an `Exception`, nothing is low or high: nutrient checks are best-effort and
-never make every nutrient look "low". (Caveat: `NutrientInsights.load` runs
-its two reads with record `.wait`, which wraps failures in a
-`ParallelWaitError`, an `Error`, so a real Firestore failure there is not
-caught by `_loadInsights`'s `on Exception` and fails the whole call; see
-limitations.)
+If nothing has been tracked (`insights.isEmpty`), or the insights read fails
+with anything (including the `ParallelWaitError` that
+`NutrientInsights.load`'s record `.wait` throws), nothing is low or high:
+nutrient checks are best-effort and never make every nutrient look "low".
+`_loadInsights` catches everything and logs it with `debugPrint`.
+
+The profile read is not best-effort. `recommendFor` starts the insights load,
+then awaits `users/{uid}` on its own (not through a record `.wait`), so a
+failed profile read throws its original error instead of judging the food
+against an empty profile.
 
 ## Decision rules
 
@@ -164,11 +167,14 @@ Nutrient example: `crisps` has `NA: 700` (≥ 600 → `highIn` sodium) and
 identified product (no error), `_newsFoodName` maps the product name onto a
 catalogue name with `matchKnownFood` (see
 [food-data.md](food-data.md#matching-scanned-names-known_foodsgdart--food_matcherdart))
-and `_RecommendationCard` renders `recommendFor(uid:, foodName:)`:
+and `_RecommendationCard` renders `recommendFor(uid:, foodName:)`. The future
+is created in `initState` (and again in `didUpdateWidget` only if the service,
+user or food changes), so toggling the swap checkbox just re-renders it:
 
 | State | Card |
 | --- | --- |
 | loading | small spinner |
+| `recommendFor` throws | neutral `_LoadFailedCard`: "Couldn’t load a recommendation." (error logged with `debugPrint`) |
 | `canBuy` | green (`primaryContainer`): "Safe to buy: …", plus "Good source of X, which your recent diet is low in." when `boostsNutrients` is non-empty |
 | `!found` | neutral (`surfaceContainerHighest`, help icon): "No data for this product yet, so we can’t give a personal recommendation." |
 | otherwise | red (`errorContainer`) "Not recommended": reason chips (`Active food news`, condition/preference labels, `High in <nutrient>`), a personalised sentence built from `generalInfo` and clashes, the over-the-limit note, the boost note, and **Try instead** with the first 3 alternatives |
@@ -241,7 +247,11 @@ flutter test test/assistant_repository_test.dart # get_alternatives contract
   general info only, news only, condition, preference, pair, nutrients,
   declined swaps), `parseProfile`, and `recommendFor` with injected
   `fetcher` / `userFetcher` / `insightsFetcher` (including a failing insights
-  read).
+  read, a `ParallelWaitError` or other `Error` from the diet read, and a
+  failed profile read propagating its original error).
+- `test/scan/analysis_result_sheet_test.dart`: the scan sheet fetches the
+  recommendation and news once across swap-checkbox rebuilds, and shows the
+  error cards instead of a spinner when they fail.
 - `test/assistant_repository_test.dart` (`get_alternatives` group): the tool
   delegates to an injected `FoodRecommendationService` and the output shape.
 
@@ -275,13 +285,3 @@ to drive low/high nutrients.
   (an LLM verdict against religion/dietary preferences) is only referenced by
   `lib/ai/food_check_demo.dart`, and `FoodCheckDemo` itself is not mounted
   anywhere in the app.
-- **Insights failures are not really best-effort.** `_loadInsights` catches
-  `on Exception`, but `NutrientInsights.load` (and `recommendFor`'s own
-  `(_userFetcher(uid), _loadInsights(uid)).wait`) surface failures as
-  `ParallelWaitError`, which extends `Error`. The unit test injects a plain
-  `Exception`, so it does not cover this path.
-- **Errors on the scan card.** `_RecommendationCard` only checks
-  `snap.hasData`, so if `recommendFor` throws (e.g. Firestore unavailable) the
-  card keeps spinning instead of showing an error. Its future is also created
-  in `build`, so the recommendation is re-fetched on every rebuild of the
-  sheet (e.g. toggling the swap checkbox).

@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 import '../diet/nutrient_insights.dart';
 import 'food.dart';
@@ -274,6 +275,11 @@ class FoodRecommendationService {
   /// Loads [foodName], [uid]'s profile (including declined swaps) and recent
   /// diet, and decides. When the user is low on any nutrient, the
   /// substitutes are loaded too so they can be ranked by what they provide.
+  ///
+  /// The diet is best-effort: if it can't be loaded the nutrient checks are
+  /// skipped. A failed profile read is rethrown as-is, though, rather than
+  /// judged against an empty profile, which could call a food that clashes
+  /// with the user's health conditions "safe to buy".
   Future<FoodRecommendation> recommendFor({
     required String uid,
     required String foodName,
@@ -282,7 +288,11 @@ class FoodRecommendationService {
     if (food == null) {
       return FoodRecommendation(food: foodName, found: false);
     }
-    final (data, insights) = await (_userFetcher(uid), _loadInsights(uid)).wait;
+    // Started together, but not via a record `.wait`, which would wrap a
+    // profile read failure in a ParallelWaitError; _loadInsights never fails.
+    final insightsFuture = _loadInsights(uid);
+    final data = await _userFetcher(uid);
+    final insights = await insightsFuture;
     final profile = parseProfile(data, insights: insights);
     FoodRecommendation decide([
       Map<String, Food> alternativeFoods = const {},
@@ -311,11 +321,14 @@ class FoodRecommendationService {
   Future<Food?> lookup(String name) => _fetcher(name);
 
   /// The user's nutrient insights; nutrient checks are best-effort, so a
-  /// failed read just leaves them out.
+  /// failed read just leaves them out. Catches everything, not just
+  /// [Exception]s: [NutrientInsights.load] reads in parallel with a record
+  /// `.wait`, which fails with a [ParallelWaitError] (an [Error]).
   Future<NutrientInsights?> _loadInsights(String uid) async {
     try {
       return await _insightsFetcher(uid);
-    } on Exception {
+    } catch (e) {
+      debugPrint('Skipping nutrient checks, diet failed to load: $e');
       return null;
     }
   }
