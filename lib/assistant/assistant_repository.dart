@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../diet/diet_window_service.dart';
 import '../food/food.dart';
 import '../food/health_condition.dart';
 import '../food/preference.dart';
@@ -13,8 +14,10 @@ class FirestoreAssistantRepository implements AssistantDataSource {
   FirestoreAssistantRepository({
     required this.userId,
     FirebaseFirestore? firestore,
+    DietWindowService? diet,
     this._profile,
-  }) : _db = firestore ?? FirebaseFirestore.instance;
+  }) : _db = firestore ?? FirebaseFirestore.instance,
+       _dietService = diet;
 
   final String userId;
   final FirebaseFirestore _db;
@@ -24,6 +27,11 @@ class FirestoreAssistantRepository implements AssistantDataSource {
 
   DocumentReference<Map<String, dynamic>> get _user =>
       _db.collection('users').doc(userId);
+
+  /// Diet days are read through the sliding window so the assistant only
+  /// sees (and never resurrects) the last two weeks. Created lazily.
+  DietWindowService? _dietService;
+  DietWindowService get _diet => _dietService ??= DietWindowService(userId);
 
   @override
   List<Map<String, Object?>> get tools => _toolDefinitions;
@@ -59,7 +67,7 @@ class FirestoreAssistantRepository implements AssistantDataSource {
       'type': 'function',
       'function': {
         'name': 'get_user_records',
-        'description': 'Read one registered personal data source with bounded pagination and optional date range.',
+        'description': 'Read one registered personal data source with bounded pagination and optional date range. The diet source only holds the last 14 days.',
         'parameters': {
           'type': 'object',
           'properties': {
@@ -377,6 +385,9 @@ class FirestoreAssistantRepository implements AssistantDataSource {
       throw const FormatException('invalid_date_range');
     }
     final limit = _boundedInt(args['limit'], fallback: 20, max: 50);
+    if (source == 'diet') {
+      return _dietRecords(args, start: start, end: end, limit: limit);
+    }
     if (source == 'profile' ||
         source == 'measurements' ||
         source == 'healthData' ||
@@ -404,7 +415,6 @@ class FirestoreAssistantRepository implements AssistantDataSource {
     Query<Map<String, dynamic>> query = _user.collection(path!);
     final dateField = switch (source) {
       'bloodPressure' => 'measuredAt',
-      'diet' => 'date',
       'receipts' => 'scannedAt',
       _ => 'localDate',
     };
@@ -438,6 +448,43 @@ class FirestoreAssistantRepository implements AssistantDataSource {
           {'id': d.id, ..._jsonSafe(d.data()) as Map<String, Object?>},
       ],
       'nextCursor': more && docs.isNotEmpty ? docs.last.id : null,
+      'hasMore': more,
+    };
+  }
+
+  /// Pages through the diet window, newest first. The cursor is the id of
+  /// the last day returned.
+  Future<Map<String, Object?>> _dietRecords(
+    Map<String, dynamic> args, {
+    required DateTime? start,
+    required DateTime? end,
+    required int limit,
+  }) async {
+    var days = [
+      for (final day in await _diet.recentDays())
+        if ((start == null || !day.date.isBefore(start)) &&
+            (end == null ||
+                day.date.isBefore(end.add(const Duration(days: 1)))))
+          day,
+    ];
+    if (args['cursor'] case final String cursor when cursor.isNotEmpty) {
+      final index = days.indexWhere((day) => day.id == cursor);
+      if (index >= 0) days = days.sublist(index + 1);
+    }
+    final page = days.take(limit).toList();
+    final more = days.length > limit;
+    return {
+      'source': 'diet',
+      'records': [
+        for (final day in page)
+          {
+            'id': day.id,
+            'date': _jsonSafe(day.date),
+            'foods': day.foods,
+            'nutrition': day.nutrition,
+          },
+      ],
+      'nextCursor': more && page.isNotEmpty ? page.last.id : null,
       'hasMore': more,
     };
   }

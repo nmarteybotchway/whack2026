@@ -74,9 +74,12 @@ class ReceiptStore {
     });
   }
 
-  /// Nutrient totals per day since [start]: receipt days plus foods logged
-  /// through the assistant (eaten or purchased), looked up individually.
-  Future<Map<DateTime, Map<String, double>>> intakeSince(DateTime start) async {
+  /// Nutrient totals per day since [start] for foods logged through the
+  /// assistant (eaten or purchased), looked up individually. Receipt days
+  /// come from `DietWindowService` instead.
+  Future<Map<DateTime, Map<String, double>>> loggedIntakeSince(
+    DateTime start,
+  ) async {
     final intake = <DateTime, Map<String, double>>{};
     void add(DateTime date, Map<String, double> values) {
       final into = intake.putIfAbsent(
@@ -84,19 +87,6 @@ class ReceiptStore {
         () => {},
       );
       values.forEach((k, v) => into[k] = (into[k] ?? 0) + v);
-    }
-
-    final days = await _diet
-        .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
-        .get();
-    for (final doc in days.docs) {
-      final date = (doc.data()['date'] as Timestamp?)?.toDate().toLocal();
-      if (date == null) continue;
-      add(date, {
-        for (final entry in (doc.data()['nutrition'] as Map? ?? {}).entries)
-          if (entry.value is num)
-            '${entry.key}': (entry.value as num).toDouble(),
-      });
     }
 
     final entries = await FirebaseFirestore.instance
