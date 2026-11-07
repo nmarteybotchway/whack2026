@@ -3,12 +3,14 @@
 /// ```sh
 /// dart run tool/fill_food.dart food.txt            # write to Firestore
 /// dart run tool/fill_food.dart food.txt --dry-run  # print only
+/// dart run tool/fill_food.dart food.txt --full     # regenerate every field
 /// ```
 ///
 /// `food.txt` holds one food per line; blank lines and `#` comments are
 /// skipped. New foods get health conditions, personal prefs, alternatives,
 /// general info and local news from OpenRouter; foods already stored only have
-/// their local news refreshed.
+/// their local news refreshed, unless `--full` regenerates them completely
+/// (e.g. after the document format changes).
 ///
 /// Step 1 of tool/fill_food_db.dart, which runs the whole pipeline.
 library;
@@ -73,9 +75,29 @@ final _fullSchema = {
         'enum': [for (final p in Preference.values) p.id],
       },
     },
+    // Strict schemas cannot have dynamic keys, so the alternatives map comes
+    // back as a list of {key, items} entries.
     'alternatives': {
       'type': 'array',
-      'items': {'type': 'string'},
+      'items': {
+        'type': 'object',
+        'properties': {
+          'key': {
+            'type': 'string',
+            'enum': [
+              Food.generalKey,
+              for (final c in HealthCondition.values) c.id,
+              for (final p in Preference.values) p.id,
+            ],
+          },
+          'items': {
+            'type': 'array',
+            'items': {'type': 'string'},
+          },
+        },
+        'required': ['key', 'items'],
+        'additionalProperties': false,
+      },
     },
     'general_info': {'type': 'string'},
     'local_news': {'type': 'string'},
@@ -93,9 +115,10 @@ final _fullSchema = {
 Future<void> main(List<String> arguments) async {
   final args = [...arguments];
   final dryRun = args.remove('--dry-run');
+  final full = args.remove('--full');
   if (args.length != 1) {
     stderr.writeln(
-      'Usage: dart run tool/fill_food.dart <food.txt> [--dry-run]',
+      'Usage: dart run tool/fill_food.dart <food.txt> [--dry-run] [--full]',
     );
     exit(64);
   }
@@ -118,7 +141,7 @@ Future<void> main(List<String> arguments) async {
         final name = queue.removeAt(0);
         stdout.writeln('… $name');
         try {
-          await _fill(name, store, ai, dryRun);
+          await _fill(name, store, ai, dryRun: dryRun, full: full);
         } catch (e) {
           failed.add(name);
           stderr.writeln('✗ $name: $e');
@@ -144,14 +167,15 @@ Future<void> main(List<String> arguments) async {
 Future<void> _fill(
   String name,
   FoodStore store,
-  OpenRouterService ai,
-  bool dryRun,
-) async {
+  OpenRouterService ai, {
+  required bool dryRun,
+  required bool full,
+}) async {
   final id = Food.idFor(name);
   final today = DateTime.now().toIso8601String().substring(0, 10);
   final existing = await store.exists(id);
 
-  if (existing) {
+  if (existing && !full) {
     final reply = await _ask(
       ai,
       'Today is $today. Search for current food-safety news about "$name" '
@@ -185,40 +209,77 @@ Future<void> _fill(
     'product for vegan; gluten for gluten_free). For religions use their '
     'mainstream dietary rules. Use an empty list if none apply.\n'
     '$preferences\n\n'
-    '"alternatives": 3 to 5 common, widely available foods that can replace '
-    'it and avoid those health and preference clashes. Short names only.\n\n'
-    '"general_info": two or three plain sentences on what the food is and its '
-    'main nutritional points (e.g. high in protein, salt or sugar).\n\n'
+    '"general_info": a reason why even a healthy person with no health '
+    'conditions or dietary preferences should avoid or limit this food, in one '
+    'or two plain sentences (e.g. bacon: processed meat classed as a cause of '
+    'cancer, high in saturated fat and salt). Use an empty string if the food '
+    'is fine for a healthy person as part of a normal diet (e.g. apples, '
+    'cabbage, eggs). Do not describe the food or its benefits.\n\n'
+    '"alternatives": substitutes for this food, as a list of {key, items} '
+    'entries. Add one entry for EACH key you listed in health_conditions and '
+    'personal_prefs (and no others), whose items are 2 to 4 substitutes that '
+    'are safe and suitable for someone with that condition or preference '
+    '(e.g. for bacon: "vegan" → tempeh bacon, smoked tofu; "hypertension" → '
+    'grilled chicken breast). If and only if general_info is not empty, also '
+    'add key "${Food.generalKey}" with 2 to 4 healthier substitutes that avoid '
+    'the problem it describes. Short names only.\n\n'
     '$_newsRules\n\nReply as JSON.',
     _fullSchema,
   );
 
+  final healthConditions = {
+    for (final c in reply['health_conditions'] as List)
+      ?HealthCondition.fromId(c as String),
+  };
+  final personalPrefs = {
+    for (final p in reply['personal_prefs'] as List)
+      ?Preference.fromId(p as String),
+  };
+  final generalInfo = (reply['general_info'] as String).trim();
+  // Asked for [{key, items}] entries, but models sometimes return the map
+  // itself ({key: items}); accept either.
+  final entries = switch (reply['alternatives']) {
+    List l => [for (final e in l) (e['key'] as String, e['items'] as List)],
+    Map m => [for (final e in m.entries) (e.key as String, e.value as List)],
+    final other => throw FormatException('Bad alternatives: $other'),
+  };
+  final alternatives = <String, List<String>>{
+    for (final (key, items) in entries)
+      key: [
+        for (final a in items)
+          if ((a as String).trim() case final alt
+              when alt.isNotEmpty && Food.idFor(alt) != id)
+            alt,
+      ],
+  };
   final food = Food(
     name: name,
-    healthConditions: {
-      for (final c in reply['health_conditions'] as List)
-        ?HealthCondition.fromId(c as String),
+    // Healthier substitutes only make sense when there is a general reason
+    // to avoid the food.
+    generalAlternatives: generalInfo.isEmpty
+        ? const []
+        : alternatives[Food.generalKey] ?? const [],
+    // Only keep lists for clashes this food actually has.
+    healthAlternatives: {
+      for (final c in healthConditions) c: ?alternatives[c.id],
     },
-    personalPrefs: {
-      for (final p in reply['personal_prefs'] as List)
-        ?Preference.fromId(p as String),
-    },
-    alternatives: [
-      for (final a in reply['alternatives'] as List)
-        if ((a as String).trim() case final alt
-            when alt.isNotEmpty && Food.idFor(alt) != id)
-          alt,
-    ],
-    generalInfo: (reply['general_info'] as String).trim(),
+    prefAlternatives: {for (final p in personalPrefs) p: ?alternatives[p.id]},
+    healthConditions: healthConditions,
+    personalPrefs: personalPrefs,
+    generalInfo: generalInfo,
     localNews: (reply['local_news'] as String).trim(),
   );
   stdout.writeln(
-    '+ $name: ${food.healthConditions.map((c) => c.id).join(', ')}'
+    '${existing ? '↻' : '+'} $name: ${food.healthConditions.map((c) => c.id).join(', ')}'
     ' | personal_prefs: ${food.personalPrefs.map((p) => p.id).join(', ')}'
-    ' | alternatives: ${food.alternatives.join(', ')}'
+    ' | alternatives: ${food.toMap()['alternatives']}'
+    ' | general_info: ${food.generalInfo.isEmpty ? '(none)' : '"${food.generalInfo}"'}'
     ' | local_news: ${food.hasNews ? '"${food.localNews}"' : '(none)'}',
   );
-  if (!dryRun) await store.write(id, food.toMap(), create: true);
+  if (dryRun) return;
+  existing
+      ? await store.replace(food, const [])
+      : await store.write(id, food.toMap(), create: true);
 }
 
 Future<Map<String, dynamic>> _ask(
