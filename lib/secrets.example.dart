@@ -12,3 +12,6 @@ const openRouterApiKey = '';
 const veryfiClientId = '';
 const veryfiUsername = '';
 const veryfiApiKey = '';
+
+/// FoodBase API key, from the FoodBase dashboard.
+const foodBaseApiKey = '';
