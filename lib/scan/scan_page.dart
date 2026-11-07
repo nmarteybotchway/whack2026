@@ -2,6 +2,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../food/food_recommendation_service.dart';
 import '../food_news.dart';
 import 'analysis_result_sheet.dart';
 import 'camera_analysis.dart';
@@ -203,7 +204,15 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
     }
 
     if (mounted) {
-      await showAnalysisResult(context, result, newsService: FoodNewsService());
+      await showAnalysisResult(
+        context,
+        result,
+        newsService: FoodNewsService(),
+        recommendationService: widget.userId == null
+            ? null
+            : FoodRecommendationService(),
+        userId: widget.userId,
+      );
     }
     if (mounted && _controller == controller) await _startStream();
   }
