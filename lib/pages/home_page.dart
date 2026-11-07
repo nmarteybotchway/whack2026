@@ -213,6 +213,21 @@ class _HomeTab extends StatelessWidget {
         Text('UID: ${user.uid}', style: theme.textTheme.bodySmall),
         const SizedBox(height: 16),
         const _SpeechToTextDemoCard(),
+        Card(
+          child: ListTile(
+            leading: const CircleAvatar(child: Icon(Icons.center_focus_strong)),
+            title: const Text('Scan gate demo'),
+            subtitle: const Text(
+              'Auto-capture test: flashes red instead of calling the API',
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const ScanPage(demo: true),
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }
