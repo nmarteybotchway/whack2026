@@ -1,5 +1,9 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:speech_to_text/speech_recognition_result.dart';
+import 'package:speech_to_text/speech_to_text.dart';
 
 import '../diet/diet_history_page.dart';
 import '../health_data/health_tracking_controller.dart';
@@ -220,7 +224,141 @@ class _HomeTab extends StatelessWidget {
             ),
           ),
         ),
+        const _SpeechToTextDemoCard(),
       ],
+    );
+  }
+}
+
+class _SpeechToTextDemoCard extends StatefulWidget {
+  const _SpeechToTextDemoCard();
+
+  @override
+  State<_SpeechToTextDemoCard> createState() => _SpeechToTextDemoCardState();
+}
+
+class _SpeechToTextDemoCardState extends State<_SpeechToTextDemoCard> {
+  final SpeechToText _speech = SpeechToText();
+  bool _available = false;
+  bool _initializing = false;
+  bool _listening = false;
+  String _recognizedWords = '';
+  String? _error;
+
+  Future<void> _toggleListening() async {
+    if (_speech.isListening) {
+      await _speech.stop();
+      return;
+    }
+
+    setState(() {
+      _initializing = true;
+      _recognizedWords = '';
+      _error = null;
+    });
+
+    try {
+      _available = await _speech.initialize(
+        onStatus: _onStatus,
+        onError: (error) {
+          if (!mounted) return;
+          setState(() {
+            _error = error.errorMsg;
+            _listening = false;
+          });
+        },
+      );
+      if (!_available) {
+        if (mounted) {
+          setState(() => _error = 'Speech recognition is unavailable.');
+        }
+        return;
+      }
+
+      await _speech.listen(
+        onResult: _onResult,
+        listenOptions: SpeechListenOptions(
+          localeId: 'en-GB',
+          partialResults: true,
+          listenFor: Duration(seconds: 30),
+          pauseFor: Duration(seconds: 5),
+        ),
+      );
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _initializing = false);
+    }
+  }
+
+  void _onStatus(String status) {
+    if (!mounted) return;
+    setState(() {
+      _listening = status == SpeechToText.listeningStatus;
+    });
+  }
+
+  void _onResult(SpeechRecognitionResult result) {
+    if (!mounted) return;
+    setState(() => _recognizedWords = result.recognizedWords);
+  }
+
+  @override
+  void dispose() {
+    if (_speech.isListening) unawaited(_speech.cancel());
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final subtitle =
+        _error ??
+        (_listening
+            ? (_recognizedWords.isEmpty
+                  ? 'Listening… tap to stop'
+                  : _recognizedWords)
+            : _recognizedWords.isEmpty
+            ? 'Tap to speak, then tap to stop'
+            : 'Heard: $_recognizedWords');
+
+    return Card(
+      child: ListTile(
+        leading: CircleAvatar(
+          child: Icon(_listening ? Icons.mic : Icons.mic_none),
+        ),
+        title: const Text('Speech-to-text test'),
+        subtitle: Text(subtitle),
+        trailing: _initializing
+            ? const SizedBox.square(
+                dimension: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : Icon(_listening ? Icons.stop : Icons.mic),
+        onTap: _initializing ? null : _toggleListening,
+      ),
+    );
+  }
+}
+
+class _PlaceholderTab extends StatelessWidget {
+  const _PlaceholderTab({required this.tab});
+
+  final _Tab tab;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Center(
+      child: Column(
+        mainAxisSize: .min,
+        children: [
+          Icon(tab.selectedIcon, size: 64, color: theme.colorScheme.primary),
+          const SizedBox(height: 12),
+          Text(tab.label, style: theme.textTheme.headlineSmall),
+          const SizedBox(height: 4),
+          const Text('Coming soon'),
+        ],
+      ),
     );
   }
 }
