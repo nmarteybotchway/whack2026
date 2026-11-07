@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:http/http.dart' as http;
 
+import '../secrets.dart' show usdaApiKey;
+
 /// The nutrients we track, as shorthand keys used in Firestore and the UI.
 ///
 /// Element shorthands follow the periodic table (CA calcium, NA sodium, ...);
@@ -38,13 +40,14 @@ class NutritionService {
     String? apiKey,
     FirebaseFirestore? firestore,
   }) : _client = client ?? http.Client(),
-       apiKey = apiKey ?? 'DEMO_KEY',
+       apiKey = apiKey ?? usdaApiKey,
        _firestore = firestore ?? FirebaseFirestore.instance;
 
   final http.Client _client;
   final FirebaseFirestore _firestore;
 
-  /// data.gov API key; DEMO_KEY is rate-limited to 30 req/hour.
+  /// USDA API key; defaults to `usdaApiKey` from the git-ignored
+  /// `lib/secrets.dart` (DEMO_KEY is rate-limited to 30 req/hour).
   final String apiKey;
 
   /// Total vitamins and minerals across all [foods].
