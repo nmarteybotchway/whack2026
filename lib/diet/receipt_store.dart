@@ -27,6 +27,21 @@ class ReceiptStore {
   Stream<QuerySnapshot<Map<String, dynamic>>> history() =>
       _diet.orderBy('date', descending: true).limit(90).snapshots();
 
+  /// Deletes every day strictly older than [cutoff] in one batch and
+  /// returns the day ids that were removed.
+  Future<List<String>> deleteOlderThan(DateTime cutoff) async {
+    final old = await _diet
+        .where('date', isLessThan: Timestamp.fromDate(cutoff))
+        .get();
+    if (old.docs.isEmpty) return const [];
+    final batch = FirebaseFirestore.instance.batch();
+    for (final doc in old.docs) {
+      batch.delete(doc.reference);
+    }
+    await batch.commit();
+    return [for (final doc in old.docs) doc.id];
+  }
+
   /// Saves the food [items] from a receipt under [day], enriching the day
   /// with the aggregated nutrients of the new foods.
   Future<void> save(List<ReceiptItem> items, DateTime day) async {

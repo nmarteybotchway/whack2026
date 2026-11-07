@@ -1,8 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+import 'diet_window_service.dart';
 import 'receipt_scan_page.dart';
-import 'receipt_store.dart';
 
 /// Diet history: scan grocery receipts and browse the stored diet, organised
 /// by the day the food was bought.
@@ -33,7 +33,7 @@ class DietHistoryPage extends StatelessWidget {
 
   Future<void> _delete(
     BuildContext context,
-    ReceiptStore store,
+    DietWindowService diet,
     String id,
   ) async {
     final confirmed = await showDialog<bool>(
@@ -57,7 +57,7 @@ class DietHistoryPage extends StatelessWidget {
     );
     if (confirmed != true) return;
     try {
-      await store.delete(id);
+      await diet.deleteDay(id);
     } catch (_) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -72,7 +72,7 @@ class DietHistoryPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final store = ReceiptStore(userId);
+    final diet = DietWindowService(userId);
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -80,7 +80,7 @@ class DietHistoryPage extends StatelessWidget {
         const SizedBox(height: 4),
         const Text(
           'Scan grocery receipts to build a record of what you eat. Foods are '
-          'grouped by the day you got them.',
+          'grouped by the day you got them, and the last two weeks are kept.',
         ),
         const SizedBox(height: 12),
         FilledButton.icon(
@@ -89,8 +89,8 @@ class DietHistoryPage extends StatelessWidget {
           label: const Text('Scan receipt'),
         ),
         const SizedBox(height: 16),
-        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: store.history(),
+        StreamBuilder<List<DietDay>>(
+          stream: diet.recentDaysStream(),
           builder: (context, snapshot) {
             if (snapshot.hasError) {
               return const Text(
@@ -101,21 +101,19 @@ class DietHistoryPage extends StatelessWidget {
             if (!snapshot.hasData) {
               return const Center(child: CircularProgressIndicator());
             }
-            final docs = snapshot.data!.docs;
+            final days = snapshot.data!;
             return Column(
               crossAxisAlignment: .stretch,
               children: [
-                if (snapshot.data!.metadata.isFromCache)
-                  const Text('Saved diet (cached)'),
-                if (docs.isEmpty)
+                if (days.isEmpty)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 8),
                     child: Text('No receipt purchases tracked yet.'),
                   ),
-                for (final doc in docs)
+                for (final day in days)
                   _DayCard(
-                    data: doc.data(),
-                    onDelete: () => _delete(context, store, doc.id),
+                    day: day,
+                    onDelete: () => _delete(context, diet, day.id),
                   ),
               ],
             );
@@ -191,23 +189,20 @@ class _ManualEntryCard extends StatelessWidget {
 }
 
 class _DayCard extends StatelessWidget {
-  const _DayCard({required this.data, required this.onDelete});
+  const _DayCard({required this.day, required this.onDelete});
 
-  final Map<String, dynamic> data;
+  final DietDay day;
   final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
-    final date = (data['date'] as Timestamp?)?.toDate().toLocal();
-    final foods = List<String>.from(data['foods'] ?? const []);
-    final nutrition = <String, double>{
-      for (final entry in (data['nutrition'] as Map? ?? {}).entries)
-        if (entry.value is num) '${entry.key}': (entry.value as num).toDouble(),
-    };
+    final date = day.date;
+    final foods = day.foods;
+    final nutrition = day.nutrition;
     return Card(
       clipBehavior: Clip.antiAlias,
       child: ExpansionTile(
-        title: Text(date == null ? 'Unknown date' : _formatDay(date)),
+        title: Text(_formatDay(date)),
         subtitle: Text('${foods.length} foods'),
         children: [
           Padding(
