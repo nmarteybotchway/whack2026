@@ -37,7 +37,7 @@ class AuthGate extends StatelessWidget {
       builder: (context, snapshot) {
         final user = snapshot.data;
         if (user == null) return const SetupPage();
-        return HomePage(user: user);
+        return HomePage(key: ValueKey(user.uid), user: user);
       },
     );
   }

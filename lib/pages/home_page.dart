@@ -2,9 +2,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../diet/diet_history_page.dart';
-// Health Connect is paused; keep the implementation for later.
-// import '../health_data/blood_pressure_page.dart';
-import '../health_data/body_measurements_page.dart';
+import '../health_data/health_tracking_controller.dart';
+import '../health_data/health_tracking_card.dart';
 import '../scan/scan_page.dart';
 import 'settings_page.dart';
 
@@ -31,15 +30,31 @@ const _leftTabs = [
   _Tab('History', Icons.history_outlined, Icons.history),
 ];
 
-const _rightTabs = [
-  _Tab('Health', Icons.favorite_outline, Icons.favorite),
-  _Tab('Settings', Icons.settings_outlined, Icons.settings),
-];
+const _rightTabs = [_Tab('Settings', Icons.settings_outlined, Icons.settings)];
 
 const _tabs = [..._leftTabs, ..._rightTabs];
 
 class _HomePageState extends State<HomePage> {
   int _index = 0;
+  late final HealthTrackingController _tracking;
+
+  @override
+  void initState() {
+    super.initState();
+    _tracking = HealthTrackingController(widget.user.uid);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _tracking.initialize();
+      if (mounted && !_tracking.introSeen) {
+        await showHealthTrackingIntro(context, _tracking);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _tracking.dispose();
+    super.dispose();
+  }
 
   void _scan() {
     Navigator.of(context)
@@ -67,12 +82,11 @@ class _HomePageState extends State<HomePage> {
           key: ValueKey(widget.user.uid),
           userId: widget.user.uid,
         ),
-        // To restore watch syncing, use BloodPressurePage here.
-        2 => BodyMeasurementsPage(
+        2 => SettingsPage(
           key: ValueKey(widget.user.uid),
-          userId: widget.user.uid,
+          user: widget.user,
+          tracking: _tracking,
         ),
-        3 => SettingsPage(user: widget.user),
         _ => const SizedBox.shrink(),
       },
       bottomNavigationBar: _BottomBar(
@@ -202,4 +216,3 @@ class _HomeTab extends StatelessWidget {
     );
   }
 }
-
