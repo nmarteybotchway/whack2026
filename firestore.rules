@@ -62,7 +62,7 @@ service cloud.firestore {
           'local_news', 'general_info', 'updatedAt'
         ])
         && request.resource.data.food is string
-        && request.resource.data.alternatives is list
+        && request.resource.data.alternatives is map
         && request.resource.data.health_conditions is list
         && request.resource.data.personal_prefs is list
         && request.resource.data.local_news is string

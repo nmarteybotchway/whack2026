@@ -182,11 +182,14 @@ Map<String, dynamic> _extractJson(String text, Map<String, Object?> schema) {
   throw FormatException('No JSON matching the schema in reply', text);
 }
 
-/// Encodes a string or list of strings as a Firestore REST value.
+/// Encodes strings, lists and string-keyed maps as a Firestore REST value.
 Map<String, dynamic> _encode(Object? v) => switch (v) {
   String s => {'stringValue': s},
   List l => {
     'arrayValue': {'values': l.map(_encode).toList()},
+  },
+  Map m => {
+    'mapValue': {'fields': m.map((k, v) => MapEntry(k as String, _encode(v)))},
   },
   _ => throw ArgumentError('Unsupported Firestore value: $v'),
 };
@@ -199,6 +202,11 @@ Object? _decode(Map<String, dynamic> v) => switch (v) {
     for (final e in (a['values'] as List? ?? const []))
       _decode(e as Map<String, dynamic>),
   ],
+  {'mapValue': Map m} => {
+    for (final MapEntry(:key, :value)
+        in (m['fields'] as Map? ?? const {}).entries)
+      key as String: _decode(value as Map<String, dynamic>),
+  },
   _ => null,
 };
 

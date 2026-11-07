@@ -82,7 +82,9 @@ ${values.join(',\n')}${values.isEmpty ? '' : ';'}
 
 String _food(Food f) =>
     'Food(name: ${_string(f.name)}, '
-    'alternatives: [${f.alternatives.map(_string).join(', ')}], '
+    'generalAlternatives: ${_list(f.generalAlternatives)}, '
+    'healthAlternatives: {${f.healthAlternatives.entries.map((e) => 'HealthCondition.${e.key.name}: ${_list(e.value)}').join(', ')}}, '
+    'prefAlternatives: {${f.prefAlternatives.entries.map((e) => 'Preference.${e.key.name}: ${_list(e.value)}').join(', ')}}, '
     'healthConditions: {${f.healthConditions.map((c) => 'HealthCondition.${c.name}').join(', ')}}, '
     'personalPrefs: {${f.personalPrefs.map((p) => 'Preference.${p.name}').join(', ')}}, '
     'localNews: ${_string(f.localNews)}, '
@@ -110,6 +112,8 @@ String _identifier(String id, Set<String> used) {
   }
   return name;
 }
+
+String _list(List<String> items) => '[${items.map(_string).join(', ')}]';
 
 /// A single-quoted Dart string literal for [s].
 String _string(String s) =>

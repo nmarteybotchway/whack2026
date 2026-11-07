@@ -7,10 +7,12 @@
 /// ```sh
 /// dart run tool/fill_food_db.dart food.txt            # update Firestore
 /// dart run tool/fill_food_db.dart food.txt --dry-run  # print only
+/// dart run tool/fill_food_db.dart food.txt --full     # regenerate all fields
 /// ```
 ///
 /// Foods that fail in step 1 are reported but do not stop the later steps.
-/// A dry run skips step 3, since nothing in Firestore changed.
+/// A dry run skips step 3, since nothing in Firestore changed. `--full`
+/// regenerates existing foods instead of only refreshing their news.
 library;
 
 import 'dart:io';
@@ -21,10 +23,10 @@ import 'generate_food.dart' as generate;
 
 Future<void> main(List<String> arguments) async {
   final dryRun = arguments.contains('--dry-run');
-  final files = arguments.where((a) => a != '--dry-run').toList();
+  final files = arguments.where((a) => !a.startsWith('--')).toList();
   if (files.length != 1) {
     stderr.writeln(
-      'Usage: dart run tool/fill_food_db.dart <food.txt> [--dry-run]',
+      'Usage: dart run tool/fill_food_db.dart <food.txt> [--dry-run] [--full]',
     );
     exit(64);
   }
