@@ -1,86 +1,58 @@
-import 'dart:convert';
+import '../food/food.dart';
+import '../food/food_repository.dart';
 
-import '../openrouter.dart';
-
-/// How the latest news reflects on the food.
-enum FoodNewsSentiment { good, bad }
-
-/// The latest negative-news verdict for a food.
+/// The food news a lookup returns.
 class FoodNewsResult {
-  const FoodNewsResult({required this.summary, required this.sentiment});
+  const FoodNewsResult({
+    required this.localNews,
+    required this.generalInfo,
+    required this.hasAlerts,
+  });
 
-  /// A ≤30-word summary of the latest breaking news, or the fixed
-  /// "No negative news discovered" message when there is none.
-  final String summary;
+  /// Current food-safety news (outbreak/recall), or the fixed fallback
+  /// message when there is none.
+  final String localNews;
 
-  final FoodNewsSentiment sentiment;
+  /// Why to avoid or limit the food, or the fixed fallback message when
+  /// the food is fine.
+  final String generalInfo;
+
+  /// Whether the food had any real news: a plain non-empty check on the raw
+  /// stored values ('' means no news per the Food contract), computed
+  /// before the fallback message is substituted for display.
+  final bool hasAlerts;
 }
 
-/// Looks up recent negative news about a food via OpenRouter.
+/// Looks up local and general-info news about a food from the food database.
 ///
-/// The model is asked to access the internet and find breaking news about
-/// outbreaks, recalls, discovered allergens, or potential issues such as
-/// high carcinogen records, and to reply as JSON matching the food-news
-/// schema: `{"summary":"string","sentiment":"Good"|"Bad"}`.
+/// Reads the Firestore `food` collection through [fetcher] — pass
+/// `FoodRepository().get` (the default) in production, or a mock in tests.
 class FoodNewsService {
-  /// Creates a service on top of a fresh [OpenRouterService].
-  /// [client] can be replaced in tests.
-  FoodNewsService({OpenRouterService? client})
-      : _client = client ?? OpenRouterService();
+  /// Creates a service that reads foods through [fetcher].
+  FoodNewsService({Future<Food?> Function(String name)? fetcher})
+    : _fetcher = fetcher ?? FoodRepository().get;
 
-  /// The fixed reply when the model finds no negative news.
+  /// The fixed reply when the database has no news for a food.
   static const String noNewsMessage = 'No negative news discovered';
 
-  static final Map<String, Object?> _schema = {
-    'type': 'object',
-    'properties': {
-      'summary': {'type': 'string'},
-      'sentiment': {'type': 'string', 'enum': ['Good', 'Bad']},
-    },
-    'required': ['summary', 'sentiment'],
-    'additionalProperties': false,
-  };
+  final Future<Food?> Function(String name) _fetcher;
 
-  final OpenRouterService _client;
-
-  /// Returns the latest breaking news about [foodName], or the fixed
-  /// [noNewsMessage] with [FoodNewsSentiment.good] when none is found.
-  Future<FoodNewsResult> getNews(String foodName) async {
-    final text = await _client.generate(
-      prompt: 'Access the internet and search for the latest breaking news '
-          'about "$foodName": outbreaks, recalls, discovered allergens, or '
-          'potential issues such as records of high carcinogens. Reply with '
-          'a summary of at most 30 words; if there is no such negative '
-          'news, reply with exactly "$noNewsMessage". Set sentiment to '
-          '"Bad" if there is negative news and "Good" if there is not.',
-      responseSchema: _schema,
-    );
-
-    final Object? decoded;
-    try {
-      decoded = jsonDecode(text);
-    } on FormatException {
-      throw StateError('FoodNewsService got non-JSON response: $text');
-    }
-    if (decoded is! Map || decoded['summary'] is! String) {
-      throw StateError('FoodNewsService got an unexpected response: $text');
-    }
-
-    final summary = (decoded['summary'] as String).trim();
-    final sentiment = switch (decoded['sentiment']) {
-      'Good' => FoodNewsSentiment.good,
-      'Bad' => FoodNewsSentiment.bad,
-      _ => throw StateError(
-          'FoodNewsService got an invalid sentiment: ${decoded['sentiment']}',
-        ),
-    };
-
+  /// Returns the stored local and general-info news about [name].
+  ///
+  /// Missing fields — an unknown food, or empty `localNews` /
+  /// `generalInfo` — fall back to [noNewsMessage] per field.
+  /// [FoodNewsResult.hasAlerts] reflects the raw non-empty check.
+  Future<FoodNewsResult> getNews(String name) async {
+    final food = await _fetcher(name);
+    final local = food?.localNews ?? '';
+    final general = food?.generalInfo ?? '';
     return FoodNewsResult(
-      summary: summary.isEmpty ? noNewsMessage : summary,
-      sentiment: sentiment,
+      localNews: _orNoNews(local),
+      generalInfo: _orNoNews(general),
+      hasAlerts: local.trim().isNotEmpty || general.trim().isNotEmpty,
     );
   }
 
-  /// Closes the underlying HTTP client.
-  void close() => _client.close();
+  static String _orNoNews(String text) =>
+      text.trim().isEmpty ? noNewsMessage : text;
 }
