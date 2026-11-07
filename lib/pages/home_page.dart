@@ -1,10 +1,12 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../ai/food_check_demo.dart';
 // Health Connect is paused; keep the implementation for later.
 // import '../health_data/blood_pressure_page.dart';
 import '../health_data/body_measurements_page.dart';
 import '../scan/scan_page.dart';
+import 'settings_page.dart';
 
 /// Mock home page shown once a Firebase user is signed in.
 class HomePage extends StatefulWidget {
@@ -31,7 +33,7 @@ const _leftTabs = [
 
 const _rightTabs = [
   _Tab('Health', Icons.favorite_outline, Icons.favorite),
-  _Tab('Leaderboards', Icons.leaderboard_outlined, Icons.leaderboard),
+  _Tab('Settings', Icons.settings_outlined, Icons.settings),
 ];
 
 const _tabs = [..._leftTabs, ..._rightTabs];
@@ -47,6 +49,7 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final tab = _tabs[_index];
     return Scaffold(
       appBar: AppBar(
         backgroundColor: theme.colorScheme.inversePrimary,
@@ -59,15 +62,16 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
-      body: _index == 0
-          ? _HomeTab(user: widget.user)
-          : _index == 2
-          // To restore watch syncing, use BloodPressurePage here.
-          ? BodyMeasurementsPage(
-              key: ValueKey(widget.user.uid),
-              userId: widget.user.uid,
-            )
-          : _PlaceholderTab(tab: _tabs[_index]),
+      body: switch (_index) {
+        0 => _HomeTab(user: widget.user),
+        // To restore watch syncing, use BloodPressurePage here.
+        2 => BodyMeasurementsPage(
+          key: ValueKey(widget.user.uid),
+          userId: widget.user.uid,
+        ),
+        3 => SettingsPage(user: widget.user),
+        _ => _PlaceholderTab(tab: tab),
+      },
       bottomNavigationBar: _BottomBar(
         index: _index,
         onSelect: (i) => setState(() => _index = i),
@@ -190,6 +194,8 @@ class _HomeTab extends StatelessWidget {
         Text('Hi, $name', style: theme.textTheme.headlineSmall),
         const SizedBox(height: 4),
         Text('UID: ${user.uid}', style: theme.textTheme.bodySmall),
+        const SizedBox(height: 16),
+        FoodCheckDemo(user: user),
         const SizedBox(height: 16),
         for (var i = 1; i <= 5; i++)
           Card(
