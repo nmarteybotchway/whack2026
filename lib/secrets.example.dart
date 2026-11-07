@@ -6,3 +6,6 @@
 
 /// OpenRouter API key, from https://openrouter.ai/keys.
 const openRouterApiKey = '';
+
+/// FoodBase API key, from the FoodBase dashboard.
+const foodBaseApiKey = '';

@@ -78,9 +78,13 @@ class _ProductCard extends StatelessWidget {
         ? 'Product not identified'
         : product.displayName;
     final statusText = switch (product.status) {
-      'identified' => 'Model estimate: ${product.confidence}%',
+      'identified' =>
+        product.confidence == 0
+            ? 'Identified · model did not provide a confidence estimate'
+            : 'Model estimate: ${product.confidence}%',
       'ambiguous' => 'Possible match · model estimate ${product.confidence}%',
       'unreadable' => 'Packaging is difficult to read',
+      'unavailable' => 'API identification is unavailable',
       _ => 'No packaged product detected',
     };
 
@@ -129,6 +133,12 @@ class _ProductCard extends StatelessWidget {
               value: product.gtin,
               confidence: product.gtinConfidence,
             ),
+            if (product.catalogProductId != null)
+              _ProductField(
+                label: 'Catalog ID',
+                value: product.catalogProductId,
+                confidence: null,
+              ),
             if (product.evidence.isNotEmpty ||
                 product.uncertainties.isNotEmpty) ...[
               const Divider(height: 24),
@@ -169,6 +179,7 @@ class _ProductField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final confidenceValue = confidence;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
@@ -187,7 +198,8 @@ class _ProductField extends StatelessWidget {
               style: Theme.of(context).textTheme.bodyMedium,
             ),
           ),
-          if (confidence != null) Text('$confidence%'),
+          if (confidenceValue != null && confidenceValue > 0)
+            Text('$confidenceValue%'),
         ],
       ),
     );
