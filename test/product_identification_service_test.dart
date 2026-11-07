@@ -132,4 +132,50 @@ void main() {
     final result = await service.identify(Uint8List.fromList([1]));
     expect(result.gtin, '4006381333931');
   });
+
+  test('parses the Markdown table returned by the OpenRouter preset', () async {
+    final service = ProductIdentificationService(
+      openRouter: OpenRouterService(
+        apiKey: 'test-key',
+        client: MockClient(
+          (_) async => http.Response(
+            jsonEncode({
+              'choices': [
+                {
+                  'message': {
+                    'content': '''
+**Product identification result:**
+| Field | Value | Confidence | Evidence |
+|---|---|---|---|
+| Brand | Cadbury | 98 | Cadbury logo |
+| Product name | Mini Chocolate Fingers | 99 | Product title on pack |
+| Variant | Milk Chocolate | 91 | Milk chocolate text |
+| Package size | 114 g | 95 | Net weight |
+| SKU | Not visible | - | - |
+| GTIN | - | - | Barcode not readable |
+''',
+                  },
+                },
+              ],
+            }),
+            200,
+          ),
+        ),
+      ),
+    );
+    addTearDown(service.close);
+
+    final result = await service.identify(Uint8List.fromList([1]));
+
+    expect(result.status, 'identified');
+    expect(
+      result.displayName,
+      'Cadbury Mini Chocolate Fingers Milk Chocolate 114 g',
+    );
+    expect(result.brandConfidence, 98);
+    expect(result.productNameConfidence, 99);
+    expect(result.sku, isNull);
+    expect(result.gtin, isNull);
+    expect(result.evidence, contains('brand: Cadbury logo'));
+  });
 }

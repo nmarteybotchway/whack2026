@@ -43,8 +43,11 @@ class _HomePageState extends State<HomePage> {
   int _index = 0;
 
   void _scan() {
-    Navigator.of(context)
-        .push(MaterialPageRoute<void>(builder: (_) => const ScanPage()));
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ScanPage(userId: widget.user.uid),
+      ),
+    );
   }
 
   @override
@@ -214,4 +217,3 @@ class _HomeTab extends StatelessWidget {
     );
   }
 }
-

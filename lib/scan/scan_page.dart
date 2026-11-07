@@ -1,15 +1,19 @@
 import 'package:camera/camera.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'analysis_result_sheet.dart';
 import 'camera_analysis.dart';
+import 'product_identification_service.dart';
 
 /// Full-screen camera page for photographing and identifying packaged items.
 class ScanPage extends StatefulWidget {
-  const ScanPage({super.key});
+  const ScanPage({super.key, this.userId});
 
-  /// The image stream is only available on Android and iOS.
+  final String? userId;
+
+  /// The camera is supported on Android and iOS.
   static bool get isSupported =>
       !kIsWeb &&
       (defaultTargetPlatform == TargetPlatform.android ||
@@ -58,6 +62,7 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
   Future<void> _startCamera() async {
     CameraController? controller;
     try {
+      final backendFuture = _loadIdentificationBackend();
       final cameras = await availableCameras();
       if (cameras.isEmpty) throw CameraException('noCamera', 'No camera found');
       final camera = cameras.firstWhere(
@@ -75,7 +80,7 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
       _controller = controller;
       await controller.initialize();
       if (!mounted || _controller != controller) return;
-      final analysis = CameraAnalysis();
+      final analysis = CameraAnalysis(backend: await backendFuture);
       setState(() {
         _analysis = analysis;
         _error = null;
@@ -91,6 +96,24 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
               : e.toString(),
         );
       }
+    }
+  }
+
+  Future<ProductIdentificationBackend> _loadIdentificationBackend() async {
+    final userId = widget.userId;
+    if (userId == null) return ProductIdentificationBackend.api;
+
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .get();
+      return ProductIdentificationBackend.fromStoredValue(
+        doc.data()?['identificationProvider'],
+      );
+    } catch (error) {
+      debugPrint('Could not load identification provider: $error');
+      return ProductIdentificationBackend.api;
     }
   }
 
