@@ -19,7 +19,8 @@ class ReceiptStore {
   final NutritionService nutrition;
 
   CollectionReference<Map<String, dynamic>> get _diet => FirebaseFirestore
-      .instance.collection('users')
+      .instance
+      .collection('users')
       .doc(userId)
       .collection('diet');
 
@@ -59,8 +60,7 @@ class ReceiptStore {
     // Merge into whatever the day already accumulated.
     final current = await _diet.doc(dateId).get();
     final existing = <String, double>{
-      for (final entry
-          in (current.data()?['nutrition'] as Map? ?? {}).entries)
+      for (final entry in (current.data()?['nutrition'] as Map? ?? {}).entries)
         if (entry.value is num) '${entry.key}': (entry.value as num).toDouble(),
     };
     totals.forEach((key, value) {
@@ -72,6 +72,50 @@ class ReceiptStore {
           entry.key: double.parse(entry.value.toStringAsFixed(2)),
       },
     });
+  }
+
+  /// Nutrient totals per day since [start]: receipt days plus foods logged
+  /// through the assistant (eaten or purchased), looked up individually.
+  Future<Map<DateTime, Map<String, double>>> intakeSince(DateTime start) async {
+    final intake = <DateTime, Map<String, double>>{};
+    void add(DateTime date, Map<String, double> values) {
+      final into = intake.putIfAbsent(
+        DateTime(date.year, date.month, date.day),
+        () => {},
+      );
+      values.forEach((k, v) => into[k] = (into[k] ?? 0) + v);
+    }
+
+    final days = await _diet
+        .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
+        .get();
+    for (final doc in days.docs) {
+      final date = (doc.data()['date'] as Timestamp?)?.toDate().toLocal();
+      if (date == null) continue;
+      add(date, {
+        for (final entry in (doc.data()['nutrition'] as Map? ?? {}).entries)
+          if (entry.value is num)
+            '${entry.key}': (entry.value as num).toDouble(),
+      });
+    }
+
+    final entries = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(userId)
+        .collection('foodEntries')
+        .where('localDate', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
+        .get();
+    for (final doc in entries.docs) {
+      final name = doc.data()['name'];
+      final date = (doc.data()['localDate'] as Timestamp?)?.toDate().toLocal();
+      if (name is! String || date == null) continue;
+      try {
+        add(date, await nutrition.nutrientsFor(name));
+      } on Exception {
+        continue;
+      }
+    }
+    return intake;
   }
 
   /// Deletes one stored day.
