@@ -2,6 +2,8 @@ import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../assistant/assistant_controller.dart';
+import '../assistant/assistant_page.dart';
 import '../food_news.dart';
 import 'analysis_result_sheet.dart';
 import 'camera_analysis.dart';
@@ -14,9 +16,10 @@ import 'scan_config.dart';
 /// photo is sent automatically once an item has been held steady for a
 /// second. The capture button works in both modes.
 class ScanPage extends StatefulWidget {
-  const ScanPage({super.key, this.userId, this.demo = false});
+  const ScanPage({super.key, this.userId, this.demo = false, this.assistant});
 
   final String? userId;
+  final AssistantController? assistant;
 
   /// Test the auto-capture without spending API calls: the stream always
   /// runs, a capture just flashes the screen red, and the gate's numbers are
@@ -182,6 +185,10 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
     final controller = _controller;
     final analysis = _analysis;
     if (controller == null || analysis == null || _analysing) return;
+    widget.assistant?.setCurrentProduct({
+      'status': 'scanning',
+      'scannedAt': DateTime.now().toUtc().toIso8601String(),
+    });
     _analysing = true;
     setState(() {});
     AnalysisResult result;
@@ -203,9 +210,45 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
     }
 
     if (mounted) {
+      final product = result.identification;
+      widget.assistant?.setCurrentProduct({
+        'status': product?.status ?? 'unavailable',
+        'scannedAt': DateTime.now().toUtc().toIso8601String(),
+        if (product != null) ...{
+          'name': product.displayName,
+          'productName': product.productName,
+          'brand': product.brand,
+          'variant': product.variant,
+          'packageSize': product.packageSize,
+          'gtin': product.gtin,
+          'catalogProductId': product.catalogProductId,
+          'confidence': product.confidence,
+          'evidence': product.evidence,
+          'uncertainties': product.uncertainties,
+        },
+        if (result.error != null) 'error': result.error,
+      });
       await showAnalysisResult(context, result, newsService: FoodNewsService());
     }
     if (mounted && _controller == controller) await _startStream();
+  }
+
+  Future<void> _openAssistant() async {
+    final assistant = widget.assistant;
+    if (assistant == null || _analysing) return;
+    await _stopStream();
+    await assistant.initialize();
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => Scaffold(
+          appBar: AppBar(title: const Text('Shopping assistant')),
+          body: AssistantPage(controller: assistant),
+        ),
+      ),
+    );
+    await assistant.suspend();
+    if (mounted) await _startStream();
   }
 
   /// Demo stand-in for an API call: flash red and start the cooldown.
@@ -227,6 +270,14 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
         title: Text(widget.demo ? 'Scan gate demo' : 'Scan'),
+        actions: [
+          if (widget.assistant != null)
+            IconButton(
+              tooltip: 'Ask about this product',
+              onPressed: _analysing ? null : _openAssistant,
+              icon: const Icon(Icons.chat_bubble_outline),
+            ),
+        ],
       ),
       body: _buildBody(),
     );
