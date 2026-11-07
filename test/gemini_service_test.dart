@@ -5,8 +5,12 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:hackathon/gemini_wrapper.dart';
+<<<<<<< HEAD
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+=======
+import 'package:hackathon/secrets.dart';
+>>>>>>> ac39a2415b71066f76b6613eb2b25a802b8808ff
 
 void main() {
   group('GeminiImage', () {
@@ -40,6 +44,7 @@ void main() {
     });
   });
 
+<<<<<<< HEAD
   group('mock live (test_image.jpg + nut-allergy prompt)', () {
     test('feeds the image and prompt, returns schema-shaped text', () async {
       final imageBytes = File('assets/test_image.jpg').readAsBytesSync();
@@ -151,6 +156,24 @@ void main() {
       );
 
       final service = GeminiService(apiKey: apiKey);
+=======
+  // Note: no live API calls by default. Network behaviour is exercised by the
+  // optional live smoke test, which needs geminiApiKey set in
+  // lib/secrets.dart and is opted into with:
+  //   flutter test --dart-define=GEMINI_LIVE_TEST=true --plain-name "live"
+  group('live (opt-in, uses geminiApiKey from lib/secrets.dart)', () {
+    test('returns text for a simple schema prompt', () async {
+      if (!const bool.fromEnvironment('GEMINI_LIVE_TEST')) {
+        markTestSkipped('Live test not requested; skipping.');
+        return;
+      }
+      if (geminiApiKey.isEmpty) {
+        markTestSkipped('geminiApiKey not set; skipping live smoke test.');
+        return;
+      }
+
+      final service = GeminiService();
+>>>>>>> ac39a2415b71066f76b6613eb2b25a802b8808ff
       final text = await service.generate(
         prompt: prompt,
         responseSchema: responseSchema,
