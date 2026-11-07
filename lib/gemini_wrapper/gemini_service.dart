@@ -47,7 +47,7 @@ class GeminiService {
 
   /// Creates a service bound to [apiKey].
   ///
-  /// [model] defaults to `gemini-2.5-flash`; override for other Gemini
+  /// [model] defaults to `gemini-3.8-flash`; override for other Gemini
   /// variants. The key is typically injected with
   /// `--dart-define=GEMINI_API_KEY=...` and read via
   /// `String.fromEnvironment('GEMINI_API_KEY')` — never commit it.
@@ -56,7 +56,7 @@ class GeminiService {
   /// inject a mock HTTP transport instead of calling the real API.
   GeminiService({
     required String apiKey,
-    String model = 'gemini-2.5-flash',
+    String model = 'gemini-3.8-flash',
     GenerativeModel? client,
   }) : _model =
             client ?? GenerativeModel(model: model, apiKey: apiKey);
