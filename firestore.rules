@@ -28,5 +28,24 @@ service cloud.firestore {
         && request.resource.data.unit == 'mmHg'
         && request.resource.data.provider == 'health_connect';
     }
+    match /food/{foodId} {
+      // Delete is for tool/dedupe_food.dart merging duplicate foods.
+      allow read, delete: if request.auth != null;
+      allow create, update: if request.auth != null
+        && request.resource.data.keys().hasAll([
+          'food', 'alternatives', 'health_conditions', 'personal_prefs',
+          'local_news', 'general_info'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'food', 'alternatives', 'health_conditions', 'personal_prefs',
+          'local_news', 'general_info', 'updatedAt'
+        ])
+        && request.resource.data.food is string
+        && request.resource.data.alternatives is list
+        && request.resource.data.health_conditions is list
+        && request.resource.data.personal_prefs is list
+        && request.resource.data.local_news is string
+        && request.resource.data.general_info is string;
+    }
   }
 }
