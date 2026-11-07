@@ -54,13 +54,6 @@ class _HomePageState extends State<HomePage> {
       appBar: AppBar(
         backgroundColor: theme.colorScheme.inversePrimary,
         title: Text(_tabs[_index].label),
-        actions: [
-          IconButton(
-            tooltip: 'Sign out',
-            icon: const Icon(Icons.logout),
-            onPressed: () => FirebaseAuth.instance.signOut(),
-          ),
-        ],
       ),
       body: switch (_index) {
         0 => _HomeTab(user: widget.user),
