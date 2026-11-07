@@ -1,11 +1,13 @@
-/// A service that checks the latest negative news about a food.
+/// A service that looks up local and general-info news about a food
+/// from the Firebase food collection.
 ///
 /// ```dart
 /// import 'package:hackathon/food_news.dart';
 ///
 /// final service = FoodNewsService();
 /// final result = await service.getNews('romaine lettuce');
-/// print('${result.sentiment}: ${result.summary}');
+/// print(result.localNews);
+/// print(result.generalInfo);
 /// ```
 library;
 

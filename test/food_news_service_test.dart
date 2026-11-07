@@ -1,106 +1,63 @@
-import 'dart:convert';
-
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hackathon/food/food.dart';
 import 'package:hackathon/food_news.dart';
-import 'package:hackathon/openrouter.dart';
-import 'package:http/http.dart' as http;
-import 'package:http/testing.dart';
 
-http.Response _reply(String content) => http.Response(
-  jsonEncode({
-    'choices': [
-      {
-        'message': {'role': 'assistant', 'content': content},
-      },
-    ],
-  }),
-  200,
-);
-
-FoodNewsService _service(String content) => FoodNewsService(
-  client: OpenRouterService(
-    apiKey: 'test-key',
-    client: MockClient((_) async => _reply(content)),
-  ),
+FoodNewsService _service(Map<String, Food> foods) => FoodNewsService(
+  fetcher: (name) async => foods[Food.idFor(name)],
 );
 
 void main() {
   group('FoodNewsService', () {
-    test('sends the news prompt with the food-news schema', () async {
-      late http.Request sent;
-      final service = FoodNewsService(
-        client: OpenRouterService(
-          apiKey: 'test-key',
-          client: MockClient((request) async {
-            sent = request;
-            return _reply(
-              '{"summary":"E. coli outbreak linked to romaine","sentiment":"Bad"}',
-            );
-          }),
-        ),
+    test('returns the fixed message for an unknown food', () async {
+      final result = await _service({}).getNews('dragon fruit');
+      expect(result.localNews, 'No negative news discovered');
+      expect(result.generalInfo, 'No negative news discovered');
+      expect(result.hasAlerts, isFalse);
+    });
+
+    test('returns stored news for bacon (carcinogen studies)', () async {
+      final bacon = const Food(
+        name: 'Bacon',
+        localNews: 'Recall of brand X bacon in Gauteng.',
+        generalInfo: 'Processed meat high in carcinogens; IARC Group 1.',
       );
-
-      await service.getNews('romaine lettuce');
-
-      final body = jsonDecode(sent.body) as Map<String, dynamic>;
-      expect(body['messages'][0]['content'], contains('romaine lettuce'));
-      expect(body['messages'][0]['content'], contains('Access the internet'));
-      expect(body['response_format']['type'], 'json_schema');
+      final result = await _service({'bacon': bacon}).getNews('bacon');
+      expect(result.localNews, 'Recall of brand X bacon in Gauteng.');
       expect(
-        body['response_format']['json_schema']['schema']['properties']
-            ['sentiment']['enum'],
-        ['Good', 'Bad'],
+        result.generalInfo,
+        'Processed meat high in carcinogens; IARC Group 1.',
       );
+      expect(result.hasAlerts, isTrue);
     });
 
-    test('parses a Bad result', () async {
-      final service = _service(
-        '{"summary":"Salmonella recall issued","sentiment":"Bad"}',
-      );
-      final result = await service.getNews('peanut butter');
-      expect(result.summary, 'Salmonella recall issued');
-      expect(result.sentiment, FoodNewsSentiment.bad);
+    test('falls back per field when only generalInfo is set', () async {
+      final eggs = const Food(name: 'Eggs', generalInfo: 'Fine in moderation.');
+      final result = await _service({'eggs': eggs}).getNews('eggs');
+      expect(result.localNews, 'No negative news discovered');
+      expect(result.generalInfo, 'Fine in moderation.');
+      expect(result.hasAlerts, isTrue);
     });
 
-    test('parses a Good result', () async {
-      final service = _service(
-        '{"summary":"No negative news discovered","sentiment":"Good"}',
-      );
-      final result = await service.getNews('bananas');
-      expect(result.summary, 'No negative news discovered');
-      expect(result.sentiment, FoodNewsSentiment.good);
+    test('falls back when both fields are empty', () async {
+      final result = await _service({
+        'tofu': const Food(name: 'Tofu'),
+      }).getNews('tofu');
+      expect(result.localNews, 'No negative news discovered');
+      expect(result.generalInfo, 'No negative news discovered');
     });
 
-    test('falls back to the fixed message on an empty summary', () async {
-      final service = _service('{"summary":"","sentiment":"Good"}');
-      final result = await service.getNews('bananas');
-      expect(result.summary, 'No negative news discovered');
-      expect(result.sentiment, FoodNewsSentiment.good);
+    test('names are normalized through Food.idFor', () async {
+      final rice = const Food(name: 'Rice');
+      final result = await _service({'rice': rice}).getNews('  RICE ');
+      expect(result.hasAlerts, isFalse); // lookup matched, no news stored
     });
 
-    test('throws StateError on an invalid sentiment', () async {
-      final service = _service('{"summary":"x","sentiment":"Neutral"}');
-      expect(() => service.getNews('bananas'), throwsStateError);
-    });
-
-    test('throws StateError on a non-JSON response', () async {
-      final service = _service('sorry, I cannot help with that');
-      expect(() => service.getNews('bananas'), throwsStateError);
+    test('hasAlerts is true when only localNews is set', () async {
+      final result = await _service({
+        'lettuce': const Food(name: 'Lettuce', localNews: 'E. coli recall.'),
+      }).getNews('lettuce');
+      expect(result.hasAlerts, isTrue);
+      expect(result.generalInfo, 'No negative news discovered');
     });
   });
-
-  // Hits the real API with openRouterApiKey from lib/secrets.dart. Opt in with:
-  //   flutter test --dart-define=FOODNEWS_LIVE_TEST=true --plain-name live
-  test('live: food news for a common food', () async {
-    if (!const bool.fromEnvironment('FOODNEWS_LIVE_TEST')) {
-      markTestSkipped('Live test not requested; skipping.');
-      return;
-    }
-    final service = FoodNewsService();
-    final result = await service.getNews('eggs');
-    service.close();
-    // ignore: avoid_print
-    print('Eggs: ${result.sentiment} — ${result.summary}');
-    expect(result.summary, isNotEmpty);
-  }, timeout: const Timeout(Duration(minutes: 2)));
 }
