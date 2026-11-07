@@ -1,6 +1,8 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../scan/scan_page.dart';
+
 /// Mock home page shown once a Firebase user is signed in.
 class HomePage extends StatefulWidget {
   const HomePage({super.key, required this.user});
@@ -35,9 +37,8 @@ class _HomePageState extends State<HomePage> {
   int _index = 0;
 
   void _scan() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Barcode scanner coming soon')),
-    );
+    Navigator.of(context)
+        .push(MaterialPageRoute<void>(builder: (_) => const ScanPage()));
   }
 
   @override
@@ -153,7 +154,7 @@ class _ScanButton extends StatelessWidget {
       dimension: 60,
       child: FloatingActionButton(
         heroTag: null,
-        tooltip: 'Scan barcode',
+        tooltip: 'Scan',
         shape: const CircleBorder(),
         backgroundColor: Colors.green,
         foregroundColor: Colors.white,
