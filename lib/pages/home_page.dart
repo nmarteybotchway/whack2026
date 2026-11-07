@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../health_data/blood_pressure_page.dart';
 import '../scan/scan_page.dart';
 import 'settings_page.dart';
 
@@ -60,6 +61,10 @@ class _HomePageState extends State<HomePage> {
       ),
       body: switch (_index) {
         0 => _HomeTab(user: widget.user),
+        2 => BloodPressurePage(
+          key: ValueKey(widget.user.uid),
+          userId: widget.user.uid,
+        ),
         3 => SettingsPage(user: widget.user),
         _ => _PlaceholderTab(tab: tab),
       },

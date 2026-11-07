@@ -1,8 +1,7 @@
 # Sync
 
-Place collection coordination, per-source cursors, retry handling, and optional
-Firebase upload logic here. Advance cursors only after successful persistence.
-
-Scope uploads to the signed-in user's `users/{uid}/` subtree. Upload only when
-cloud sharing is enabled, and propagate corrections and deletions. Background
-collection will need platform support and appropriate permissions.
+`blood_pressure_sync.dart` reconciles a rolling 29-day Health Connect window into
+`users/{uid}/bloodPressure/{sourceRecordId}`. It uploads changes, removes deleted
+records within that window, and checks account identity before each write batch.
+The Health page owns foreground refresh scheduling and explicit upload consent.
+See the parent README for setup, limitations, and deletion behaviour.

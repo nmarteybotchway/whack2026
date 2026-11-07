@@ -1,0 +1,25 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+
+/// Read-only Android bridge. A record contains both blood pressure components.
+class BloodPressureSource {
+  static const _channel = MethodChannel('sentinel/health_connect');
+
+  Future<String> availability() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
+      return 'unavailable';
+    }
+    return await _channel.invokeMethod<String>('availability') ?? 'unavailable';
+  }
+
+  Future<bool> requestPermission() async =>
+      await _channel.invokeMethod<bool>('requestPermission') ?? false;
+
+  Future<List<Map<String, dynamic>>> read(DateTime start, DateTime end) async {
+    final records = await _channel.invokeListMethod<dynamic>(
+      'readBloodPressure',
+      {'start': start.millisecondsSinceEpoch, 'end': end.millisecondsSinceEpoch},
+    );
+    return (records ?? []).map((r) => Map<String, dynamic>.from(r as Map)).toList();
+  }
+}
