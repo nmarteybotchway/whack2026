@@ -4,16 +4,14 @@ import 'package:flutter/material.dart';
 
 import 'analysis_result_sheet.dart';
 import 'camera_analysis.dart';
-import 'scan_config.dart';
 
-/// Full-screen camera page that feeds frames to [CameraAnalysis].
-///
-/// Whether every frame is analysed or only the frame after a button press is
-/// decided by [scanMode].
+/// Full-screen camera page for photographing and identifying packaged items.
 class ScanPage extends StatefulWidget {
-  const ScanPage({super.key});
+  const ScanPage({super.key, this.userId});
 
-  /// The image stream is only available on Android and iOS.
+  final String? userId;
+
+  /// The camera is supported on Android and iOS.
   static bool get isSupported =>
       !kIsWeb &&
       (defaultTargetPlatform == TargetPlatform.android ||
@@ -28,11 +26,8 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
   CameraAnalysis? _analysis;
   String? _error;
 
-  /// True while [CameraAnalysis.analyse] is running; new frames are dropped.
+  /// True while a still photo is being analysed.
   bool _analysing = false;
-
-  /// Button mode: send the next frame that arrives to the analysis.
-  bool _captureNext = false;
 
   @override
   void initState() {
@@ -81,11 +76,8 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
       );
       _controller = controller;
       await controller.initialize();
-      // Both modes run the stream; button mode just ignores frames until the
-      // button is pressed, so a capture is the very next preview frame.
-      await controller.startImageStream(_onFrame);
       if (!mounted || _controller != controller) return;
-      final analysis = CameraAnalysis(camera: camera);
+      final analysis = CameraAnalysis();
       setState(() {
         _analysis = analysis;
         _error = null;
@@ -109,37 +101,32 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
     _controller = null;
     _analysis?.dispose();
     _analysis = null;
-    _captureNext = false;
   }
 
-  Future<void> _onFrame(CameraImage frame) async {
+  Future<void> _capture() async {
+    final controller = _controller;
     final analysis = _analysis;
-    if (analysis == null || _analysing) return;
-    if (scanMode == ScanMode.button) {
-      if (!_captureNext) return;
-      _captureNext = false;
-    }
-
-    // Only button mode shows busy state; avoid rebuilding on every streamed
-    // frame.
-    final showBusy = scanMode == ScanMode.button;
+    if (controller == null || analysis == null || _analysing) return;
     _analysing = true;
-    if (showBusy) setState(() {});
-    final AnalysisResult result;
+    setState(() {});
+    AnalysisResult result;
     try {
-      result = await analysis.analyse(frame);
+      final photo = await controller.takePicture();
+      result = await analysis.analyse(await photo.readAsBytes());
+    } catch (error) {
+      debugPrint('Product scan failed: $error');
+      result = const AnalysisResult(
+        error: 'Could not identify this photo. Check your connection and try again.',
+      );
     } finally {
       _analysing = false;
-      if (showBusy && mounted) setState(() {});
+      if (mounted) setState(() {});
     }
 
-    // Stream mode analyses continuously, so only button presses pop up results.
-    if (scanMode == ScanMode.button && mounted) {
+    if (mounted) {
       await showAnalysisResult(context, result);
     }
   }
-
-  void _capture() => _captureNext = true;
 
   @override
   Widget build(BuildContext context) {
@@ -174,13 +161,7 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
           right: 0,
           bottom: 32,
           child: Center(
-            child: switch (scanMode) {
-              ScanMode.stream => const _StreamIndicator(),
-              ScanMode.button => _CaptureButton(
-                busy: _analysing,
-                onPressed: _capture,
-              ),
-            },
+            child: _CaptureButton(busy: _analysing, onPressed: _capture),
           ),
         ),
       ],
@@ -208,18 +189,6 @@ class _CaptureButton extends StatelessWidget {
             ? const CircularProgressIndicator(color: Colors.white)
             : const Icon(Icons.camera_alt, size: 32),
       ),
-    );
-  }
-}
-
-class _StreamIndicator extends StatelessWidget {
-  const _StreamIndicator();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Chip(
-      avatar: Icon(Icons.circle, size: 12, color: Colors.green),
-      label: Text('Live analysis'),
     );
   }
 }
