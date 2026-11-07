@@ -5,6 +5,9 @@
 /// page, so [fromLabel] maps a user's choices onto these. Beliefs with no
 /// food rules (Christianity, Atheist, Agnostic) are deliberately absent.
 enum Preference {
+  /// No preference, e.g. the second key in `Food.alternatives` for someone
+  /// without any of a food's clashing preferences.
+  none('none', 'None'),
   islam('islam', 'Islam'),
   judaism('judaism', 'Judaism'),
   hinduism('hinduism', 'Hinduism'),
@@ -28,8 +31,14 @@ enum Preference {
     for (final p in values) p.id: p,
   };
 
+  /// Every real preference, i.e. all values except [none].
+  static final List<Preference> preferences = [
+    for (final p in values)
+      if (p != none) p,
+  ];
+
   static final Map<String, Preference> _byLabel = {
-    for (final p in values) p.label: p,
+    for (final p in preferences) p.label: p,
   };
 
   /// The preference stored as [id], or null if it is unknown.

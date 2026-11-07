@@ -3,6 +3,9 @@
 /// [id] is the string stored in Firestore; never change an existing one, or
 /// stored foods will stop matching it. [label] is for display.
 enum HealthCondition {
+  /// No health condition, e.g. the first key in `Food.alternatives` for
+  /// someone without any of a food's clashing conditions.
+  none('none', 'None'),
   hypertension('hypertension', 'High blood pressure'),
   diabetes('diabetes', 'Diabetes'),
   highCholesterol('high_cholesterol', 'High cholesterol'),
@@ -28,6 +31,12 @@ enum HealthCondition {
 
   final String id;
   final String label;
+
+  /// Every real condition, i.e. all values except [none].
+  static final List<HealthCondition> conditions = [
+    for (final c in values)
+      if (c != none) c,
+  ];
 
   static final Map<String, HealthCondition> _byId = {
     for (final c in values) c.id: c,
