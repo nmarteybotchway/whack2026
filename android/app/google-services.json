@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "791066186183",
+    "project_id": "whack-2026-c7898",
+    "storage_bucket": "whack-2026-c7898.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:791066186183:android:0799c23cf9d9145faa09e2",
+        "android_client_info": {
+          "package_name": "com.example.hackathon"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDEfPNPLetBajID0DerYHmdDBRj7KTjbgA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
