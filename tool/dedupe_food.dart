@@ -119,8 +119,8 @@ Future<List<({String name, List<String> ids})>> findDuplicates(
 }
 
 /// Combines [parts] into one food called [name]: sets are unioned,
-/// alternatives are joined per key in first-seen order, the first general info is kept,
-/// and distinct news is joined.
+/// alternatives are joined per condition/preference pair in first-seen order,
+/// the first general info is kept, and distinct news is joined.
 Food _merge(String name, List<Food> parts) {
   final ids = {Food.idFor(name), for (final f in parts) f.id};
 
@@ -133,14 +133,12 @@ Food _merge(String name, List<Food> parts) {
 
   return Food(
     name: name,
-    generalAlternatives: join(parts.map((f) => f.generalAlternatives)),
-    healthAlternatives: {
-      for (final c in {for (final f in parts) ...f.healthAlternatives.keys})
-        c: join(parts.map((f) => f.healthAlternatives[c] ?? const [])),
-    },
-    prefAlternatives: {
-      for (final p in {for (final f in parts) ...f.prefAlternatives.keys})
-        p: join(parts.map((f) => f.prefAlternatives[p] ?? const [])),
+    alternatives: {
+      for (final c in {for (final f in parts) ...f.alternatives.keys})
+        c: {
+          for (final p in {for (final f in parts) ...?f.alternatives[c]?.keys})
+            p: join(parts.map((f) => f.alternatives[c]?[p] ?? const [])),
+        },
     },
     healthConditions: {for (final f in parts) ...f.healthConditions},
     personalPrefs: {for (final f in parts) ...f.personalPrefs},
