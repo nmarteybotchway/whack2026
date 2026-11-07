@@ -79,10 +79,16 @@ class OpenRouterService {
   ///
   /// If [responseSchema] (a JSON Schema object) is given, the model is asked
   /// to reply with JSON matching it, and the returned string is that JSON.
+  ///
+  /// If [webSearch] is true, OpenRouter's web plugin adds live search results
+  /// to the prompt (billed per request on top of the model's tokens). Such
+  /// calls can take minutes, so raise [timeout] to match.
   Future<String> generate({
     required String prompt,
     Map<String, Object?>? responseSchema,
     OpenRouterImage? image,
+    bool webSearch = false,
+    Duration timeout = const Duration(seconds: 45),
   }) async {
     final content = image == null
         ? prompt
@@ -94,30 +100,46 @@ class OpenRouterService {
             },
           ];
 
-    final response = await _client.post(
-      _endpoint,
-      headers: {
-        'Authorization': 'Bearer $_apiKey',
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({
-        'model': model,
-        'messages': [
-          {'role': 'user', 'content': content},
-        ],
-        if (responseSchema != null)
-          'response_format': {
-            'type': 'json_schema',
-            'json_schema': {
-              'name': 'response',
-              'strict': true,
-              'schema': responseSchema,
-            },
+    final response = await _client
+        .post(
+          _endpoint,
+          headers: {
+            'Authorization': 'Bearer $_apiKey',
+            'Content-Type': 'application/json',
           },
-      }),
-    );
+          body: jsonEncode({
+            'model': model,
+            'messages': [
+              {'role': 'user', 'content': content},
+            ],
+            if (webSearch)
+              'plugins': [
+                {'id': 'web'},
+              ],
+            if (responseSchema != null)
+              'provider': {'require_parameters': true},
+            if (responseSchema != null)
+              'response_format': {
+                'type': 'json_schema',
+                'json_schema': {
+                  'name': 'response',
+                  'strict': true,
+                  'schema': responseSchema,
+                },
+              },
+          }),
+        )
+        .timeout(timeout);
 
-    final body = jsonDecode(utf8.decode(response.bodyBytes));
+    final dynamic body;
+    try {
+      body = jsonDecode(utf8.decode(response.bodyBytes));
+    } on FormatException {
+      throw OpenRouterException(
+        response.statusCode,
+        'OpenRouter returned a non-JSON response.',
+      );
+    }
     if (response.statusCode != 200 || body is! Map || body['error'] != null) {
       final error = body is Map ? body['error'] : null;
       throw OpenRouterException(

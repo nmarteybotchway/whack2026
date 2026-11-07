@@ -4,6 +4,27 @@ service cloud.firestore {
     function owner(uid) {
       return request.auth != null && request.auth.uid == uid;
     }
+    match /users/{uid}/healthProfile/measurements {
+      allow read, delete: if owner(uid);
+      allow create, update: if owner(uid)
+        && request.resource.data.keys().hasAll(['heightCm', 'weightKg', 'bmi', 'heightUnit', 'weightUnit', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['heightCm', 'weightKg', 'bmi', 'heightUnit', 'weightUnit', 'updatedAt'])
+        && request.resource.data.heightCm is number
+        && request.resource.data.heightCm > 0
+        && request.resource.data.heightCm <= 300
+        && request.resource.data.weightKg is number
+        && request.resource.data.weightKg > 0
+        && request.resource.data.weightKg <= 1000
+        && request.resource.data.heightUnit in ['cm', 'ft_in']
+        && request.resource.data.weightUnit in ['kg', 'lb']
+        && request.resource.data.bmi is number
+        && request.resource.data.bmi > 0
+        && request.resource.data.bmi >= (request.resource.data.weightKg * 10000.0 /
+            (request.resource.data.heightCm * request.resource.data.heightCm)) - 0.000001
+        && request.resource.data.bmi <= (request.resource.data.weightKg * 10000.0 /
+            (request.resource.data.heightCm * request.resource.data.heightCm)) + 0.000001
+        && request.resource.data.updatedAt == request.time;
+    }
     match /users/{uid}/bloodPressure/{recordId} {
       allow read, delete: if owner(uid);
       allow create, update: if owner(uid)
@@ -27,6 +48,55 @@ service cloud.firestore {
         && request.resource.data.sourceApp is string
         && request.resource.data.unit == 'mmHg'
         && request.resource.data.provider == 'health_connect';
+    }
+    match /food/{foodId} {
+      // Delete is for tool/dedupe_food.dart merging duplicate foods.
+      allow read, delete: if request.auth != null;
+      allow create, update: if request.auth != null
+        && request.resource.data.keys().hasAll([
+          'food', 'alternatives', 'health_conditions', 'personal_prefs',
+          'local_news', 'general_info'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'food', 'alternatives', 'health_conditions', 'personal_prefs',
+          'local_news', 'general_info', 'updatedAt'
+        ])
+        && request.resource.data.food is string
+        && request.resource.data.alternatives is map
+        && request.resource.data.health_conditions is list
+        && request.resource.data.personal_prefs is list
+        && request.resource.data.local_news is string
+        && request.resource.data.general_info is string;
+    }
+    match /users/{uid}/receipts/{receiptId} {
+      allow read, delete: if owner(uid);
+      allow create, update: if owner(uid)
+        && request.resource.data.keys().hasAll(['scannedAt', 'items', 'total'])
+        && request.resource.data.keys().hasOnly(['scannedAt', 'items', 'total'])
+        && request.resource.data.scannedAt is timestamp
+        && request.resource.data.items is list
+        && request.resource.data.items.size() <= 200
+        && request.resource.data.total is number
+        && request.resource.data.total >= -100000
+        && request.resource.data.total <= 100000;
+    }
+    match /users/{uid}/diet/{dayId} {
+      allow read, delete: if owner(uid);
+      allow create, update: if owner(uid)
+        && request.resource.data.keys().hasAll(['date', 'foods', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(
+          ['date', 'foods', 'updatedAt', 'nutrition'])
+        && request.resource.data.date is timestamp
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.foods is list
+        && request.resource.data.foods.size() <= 500
+        && request.resource.data.foods[0] is string;
+    }
+    match /nutritionCache/{foodName} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null
+        && request.resource.data.keys().hasAll(['nutrition', 'updatedAt'])
+        && request.resource.data.updatedAt == request.time;
     }
   }
 }
