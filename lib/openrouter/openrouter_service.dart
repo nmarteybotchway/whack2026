@@ -94,30 +94,42 @@ class OpenRouterService {
             },
           ];
 
-    final response = await _client.post(
-      _endpoint,
-      headers: {
-        'Authorization': 'Bearer $_apiKey',
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({
-        'model': model,
-        'messages': [
-          {'role': 'user', 'content': content},
-        ],
-        if (responseSchema != null)
-          'response_format': {
-            'type': 'json_schema',
-            'json_schema': {
-              'name': 'response',
-              'strict': true,
-              'schema': responseSchema,
-            },
+    final response = await _client
+        .post(
+          _endpoint,
+          headers: {
+            'Authorization': 'Bearer $_apiKey',
+            'Content-Type': 'application/json',
           },
-      }),
-    );
+          body: jsonEncode({
+            'model': model,
+            'messages': [
+              {'role': 'user', 'content': content},
+            ],
+            if (responseSchema != null)
+              'provider': {'require_parameters': true},
+            if (responseSchema != null)
+              'response_format': {
+                'type': 'json_schema',
+                'json_schema': {
+                  'name': 'response',
+                  'strict': true,
+                  'schema': responseSchema,
+                },
+              },
+          }),
+        )
+        .timeout(const Duration(seconds: 45));
 
-    final body = jsonDecode(utf8.decode(response.bodyBytes));
+    final dynamic body;
+    try {
+      body = jsonDecode(utf8.decode(response.bodyBytes));
+    } on FormatException {
+      throw OpenRouterException(
+        response.statusCode,
+        'OpenRouter returned a non-JSON response.',
+      );
+    }
     if (response.statusCode != 200 || body is! Map || body['error'] != null) {
       final error = body is Map ? body['error'] : null;
       throw OpenRouterException(

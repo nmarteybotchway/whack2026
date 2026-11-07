@@ -61,7 +61,7 @@ class _AuthGateState extends State<AuthGate> {
             body: Center(child: CircularProgressIndicator()),
           );
         }
-        return HomePage(user: user);
+        return HomePage(key: ValueKey(user.uid), user: user);
       },
     );
   }
