@@ -2,6 +2,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../food_news.dart';
 import 'analysis_result_sheet.dart';
 import 'camera_analysis.dart';
 import 'frame_gate.dart';
@@ -202,7 +203,7 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
     }
 
     if (mounted) {
-      await showAnalysisResult(context, result);
+      await showAnalysisResult(context, result, newsService: FoodNewsService());
     }
     if (mounted && _controller == controller) await _startStream();
   }
