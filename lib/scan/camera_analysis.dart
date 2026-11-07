@@ -1,7 +1,8 @@
-import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 
-/// A scored item, either the scanned one or a suggested alternative.
+import 'product_identification_service.dart';
+
+/// A scored item, retained for the existing result-sheet preview.
 class AnalysedItem {
   const AnalysedItem({
     required this.name,
@@ -10,59 +11,44 @@ class AnalysedItem {
   });
 
   final String name;
-
-  /// Health score from 0 (worst) to 100 (best).
   final int score;
-
-  /// Short facts shown under the item, e.g. "High in sugar".
   final List<String> highlights;
 }
 
-/// What [CameraAnalysis] found in a frame.
+/// Result of one product photo analysis.
 class AnalysisResult {
-  const AnalysisResult({required this.item, this.alternative});
+  const AnalysisResult({
+    this.identification,
+    this.error,
+    this.item,
+    this.alternative,
+  });
 
-  final AnalysedItem item;
+  final ProductIdentification? identification;
+  final String? error;
 
-  /// A better option to suggest instead of [item], if there is one.
+  /// Legacy preview fields, used only by older callers of the result sheet.
+  final AnalysedItem? item;
   final AnalysedItem? alternative;
 }
 
-/// Receives camera frames from the scan page and analyses them.
-///
-/// Frames are raw [CameraImage]s from the camera's image stream: YUV420 on
-/// Android and BGRA8888 on iOS. Use [camera] (e.g. its `sensorOrientation`)
-/// to work out how the frame is rotated relative to the screen.
+/// Sends a camera JPEG to the product identification service.
 class CameraAnalysis {
-  CameraAnalysis({required this.camera});
+  CameraAnalysis({ProductIdentificationService? service})
+    : _ownsService = service == null,
+      _service = service ?? ProductIdentificationService();
 
-  final CameraDescription camera;
+  final ProductIdentificationService _service;
+  final bool _ownsService;
 
-  /// Analyses a single frame. The scan page waits for the returned future
-  /// before sending the next frame, so it is safe to do slow work here.
-  Future<AnalysisResult> analyse(CameraImage frame) async {
-    debugPrint(
-      'CameraAnalysis: ${frame.width}x${frame.height} '
-      '${frame.format.group.name}, ${frame.planes.length} plane(s)',
-    );
-    // TODO: real analysis. Mocked result until then.
-    await Future<void>.delayed(const Duration(milliseconds: 600));
-    return _mockResult;
+  Future<AnalysisResult> analyse(Uint8List jpegBytes) async {
+    debugPrint('CameraAnalysis: identifying ${jpegBytes.length} JPEG bytes');
+    final identification = await _service.identify(jpegBytes);
+    return AnalysisResult(identification: identification);
   }
 
-  /// Releases any resources held by the analysis.
-  void dispose() {}
+  /// Releases the API client when this analysis created it.
+  void dispose() {
+    if (_ownsService) _service.close();
+  }
 }
-
-const _mockResult = AnalysisResult(
-  item: AnalysedItem(
-    name: 'Milk chocolate bar (mock)',
-    score: 28,
-    highlights: ['High in sugar (56g / 100g)', 'High in saturated fat'],
-  ),
-  alternative: AnalysedItem(
-    name: 'Dark chocolate 85% (mock)',
-    score: 64,
-    highlights: ['70% less sugar', 'Higher in fibre and iron'],
-  ),
-);
