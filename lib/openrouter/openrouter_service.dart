@@ -79,10 +79,14 @@ class OpenRouterService {
   ///
   /// If [responseSchema] (a JSON Schema object) is given, the model is asked
   /// to reply with JSON matching it, and the returned string is that JSON.
+  ///
+  /// If [webSearch] is true, OpenRouter's web plugin adds live search results
+  /// to the prompt (billed per request on top of the model's tokens).
   Future<String> generate({
     required String prompt,
     Map<String, Object?>? responseSchema,
     OpenRouterImage? image,
+    bool webSearch = false,
   }) async {
     final content = image == null
         ? prompt
@@ -105,6 +109,10 @@ class OpenRouterService {
         'messages': [
           {'role': 'user', 'content': content},
         ],
+        if (webSearch)
+          'plugins': [
+            {'id': 'web'},
+          ],
         if (responseSchema != null)
           'response_format': {
             'type': 'json_schema',
