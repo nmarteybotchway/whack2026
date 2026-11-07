@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../scan/scan_page.dart';
+import 'settings_page.dart';
 
 /// Mock home page shown once a Firebase user is signed in.
 class HomePage extends StatefulWidget {
@@ -28,7 +29,7 @@ const _leftTabs = [
 
 const _rightTabs = [
   _Tab('Health', Icons.favorite_outline, Icons.favorite),
-  _Tab('Leaderboards', Icons.leaderboard_outlined, Icons.leaderboard),
+  _Tab('Settings', Icons.settings_outlined, Icons.settings),
 ];
 
 const _tabs = [..._leftTabs, ..._rightTabs];
@@ -44,6 +45,7 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final tab = _tabs[_index];
     return Scaffold(
       appBar: AppBar(
         backgroundColor: theme.colorScheme.inversePrimary,
@@ -56,9 +58,11 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
-      body: _index == 0
-          ? _HomeTab(user: widget.user)
-          : _PlaceholderTab(tab: _tabs[_index]),
+      body: switch (_index) {
+        0 => _HomeTab(user: widget.user),
+        3 => SettingsPage(user: widget.user),
+        _ => _PlaceholderTab(tab: tab),
+      },
       bottomNavigationBar: _BottomBar(
         index: _index,
         onSelect: (i) => setState(() => _index = i),
