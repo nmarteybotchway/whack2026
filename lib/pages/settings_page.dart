@@ -3,33 +3,20 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../food/health_condition.dart';
+import '../food/preference.dart';
 import '../health_data/body_measurements_card.dart';
 import '../health_data/health_data_card.dart';
 import '../health_data/health_tracking_controller.dart';
 
-/// Common religious beliefs offered as quick-pick options.
-const _religionOptions = [
-  'Christianity',
-  'Islam',
-  'Judaism',
-  'Hinduism',
-  'Buddhism',
-  'Sikhism',
-  'Atheist',
-  'Agnostic',
+/// Religion options: every [Preference.religions] label, then beliefs with
+/// no food rules.
+final _religionOptions = [
+  for (final p in Preference.religions) p.label,
+  ...Preference.otherBeliefs,
 ];
 
-/// Common dietary requirements offered as quick-pick options.
-const _dietaryOptions = [
-  'Gluten free',
-  'Vegetarian',
-  'Vegan',
-  'Pescatarian',
-  'Halal',
-  'Kosher',
-  'Dairy free',
-  'Nut allergy',
-];
+/// Dietary options: every [Preference.dietary] label.
+final _dietaryOptions = [for (final p in Preference.dietary) p.label];
 
 /// User preferences stored in Firestore at `users/{uid}`.
 class SettingsPage extends StatefulWidget {
