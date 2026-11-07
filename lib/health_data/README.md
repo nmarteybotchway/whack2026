@@ -1,6 +1,10 @@
-# Current Health tab: manual height and weight
+# Preferences: manual height and weight
 
-The Health tab now uses `body_measurements_page.dart`. It loads and saves the
+The bottom of Settings → Preferences shows a `BodyMeasurementsCard`, matching
+the beliefs and dietary cards. It displays the saved height, weight and BMI;
+tapping opens `body_measurements_page.dart` in a bottom sheet. Saving closes the
+editor and updates the summary through Firestore. Beliefs and dietary edits
+save when their Done button is tapped. It loads and saves the
 signed-in user's latest `heightCm`, `weightKg`, calculated `bmi`, selected
 `heightUnit` (`cm` or `ft_in`), `weightUnit` (`kg` or `lb`), and server `updatedAt` at:
 
@@ -18,9 +22,8 @@ replaces the current measurements rather than creating a history.
 Deploy `firestore.rules` to enable owner-only access to the new profile document:
 `firebase deploy --only firestore:rules --project whack-2026-c7898`.
 
-The BloodPressurePage import/route is commented out in `home_page.dart`; the
-Health Connect implementation is preserved below for later. No Health Connect
-collection starts from the current screen.
+The standalone Health tab has been removed. The Health Connect implementation
+is preserved below for later but is not routed into the current UI.
 
 ---
 
