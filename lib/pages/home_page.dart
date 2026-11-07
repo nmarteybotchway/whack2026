@@ -1,7 +1,9 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import '../health_data/blood_pressure_page.dart';
+import '../diet/diet_history_page.dart';
+import '../health_data/health_tracking_controller.dart';
+import '../health_data/health_tracking_card.dart';
 import '../scan/scan_page.dart';
 import 'settings_page.dart';
 
@@ -25,48 +27,63 @@ class _Tab {
 
 const _leftTabs = [
   _Tab('Home', Icons.home_outlined, Icons.home),
-  _Tab('Track', Icons.timeline_outlined, Icons.timeline),
+  _Tab('History', Icons.history_outlined, Icons.history),
 ];
 
-const _rightTabs = [
-  _Tab('Health', Icons.favorite_outline, Icons.favorite),
-  _Tab('Settings', Icons.settings_outlined, Icons.settings),
-];
+const _rightTabs = [_Tab('Settings', Icons.settings_outlined, Icons.settings)];
 
 const _tabs = [..._leftTabs, ..._rightTabs];
 
 class _HomePageState extends State<HomePage> {
   int _index = 0;
+  late final HealthTrackingController _tracking;
+
+  @override
+  void initState() {
+    super.initState();
+    _tracking = HealthTrackingController(widget.user.uid);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _tracking.initialize();
+      if (mounted && !_tracking.introSeen) {
+        await showHealthTrackingIntro(context, _tracking);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _tracking.dispose();
+    super.dispose();
+  }
 
   void _scan() {
-    Navigator.of(context)
-        .push(MaterialPageRoute<void>(builder: (_) => const ScanPage()));
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ScanPage(userId: widget.user.uid),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final tab = _tabs[_index];
     return Scaffold(
       appBar: AppBar(
         backgroundColor: theme.colorScheme.inversePrimary,
         title: Text(_tabs[_index].label),
-        actions: [
-          IconButton(
-            tooltip: 'Sign out',
-            icon: const Icon(Icons.logout),
-            onPressed: () => FirebaseAuth.instance.signOut(),
-          ),
-        ],
       ),
       body: switch (_index) {
         0 => _HomeTab(user: widget.user),
-        2 => BloodPressurePage(
+        1 => DietHistoryPage(
           key: ValueKey(widget.user.uid),
           userId: widget.user.uid,
         ),
-        3 => SettingsPage(user: widget.user),
-        _ => _PlaceholderTab(tab: tab),
+        2 => SettingsPage(
+          key: ValueKey(widget.user.uid),
+          user: widget.user,
+          tracking: _tracking,
+        ),
+        _ => const SizedBox.shrink(),
       },
       bottomNavigationBar: _BottomBar(
         index: _index,
@@ -191,39 +208,7 @@ class _HomeTab extends StatelessWidget {
         const SizedBox(height: 4),
         Text('UID: ${user.uid}', style: theme.textTheme.bodySmall),
         const SizedBox(height: 16),
-        for (var i = 1; i <= 5; i++)
-          Card(
-            child: ListTile(
-              leading: CircleAvatar(child: Text('$i')),
-              title: Text('Placeholder item $i'),
-              subtitle: const Text('Mock content'),
-              trailing: const Icon(Icons.chevron_right),
-            ),
-          ),
       ],
-    );
-  }
-}
-
-class _PlaceholderTab extends StatelessWidget {
-  const _PlaceholderTab({required this.tab});
-
-  final _Tab tab;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Center(
-      child: Column(
-        mainAxisSize: .min,
-        children: [
-          Icon(tab.selectedIcon, size: 64, color: theme.colorScheme.primary),
-          const SizedBox(height: 12),
-          Text(tab.label, style: theme.textTheme.headlineSmall),
-          const SizedBox(height: 4),
-          const Text('Coming soon'),
-        ],
-      ),
     );
   }
 }
