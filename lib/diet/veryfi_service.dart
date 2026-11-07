@@ -50,7 +50,8 @@ class VeryfiService {
     );
 
     final body = jsonDecode(utf8.decode(response.bodyBytes));
-    if (response.statusCode != 200) {
+    // Veryfi returns 201 Created on successful document processing.
+    if (response.statusCode != 200 && response.statusCode != 201) {
       final message = body is Map
           ? (body['message'] ?? body['error'] ?? response.reasonPhrase)
           : response.reasonPhrase;
@@ -70,31 +71,36 @@ class VeryfiService {
 
   /// Maps Veryfi's `line_items` array onto [ReceiptItem]s.
   ///
-  /// Veryfi uses `price` for the unit price and `total` for the line total;
-  /// quantity is `qty`, and missing prices fall back to `total` for single
-  /// quantities.
+  /// In practice Veryfi often leaves `price` and `qty` null and only fills
+  /// `total`, so the line total is used as a single-quantity price then.
   List<ReceiptItem> _itemsFromResponse(Map<dynamic, dynamic> body) {
     final lineItems = body['line_items'];
     if (lineItems is! List) return const [];
     final items = <ReceiptItem>[];
     for (final raw in lineItems) {
       if (raw is! Map) continue;
-      final name = (raw['description'] as String? ?? '').trim();
+      final name = (raw['description'] as String? ?? '')
+          .replaceAll(_whitespace, ' ')
+          .trim();
       if (name.isEmpty) continue;
       final price = _toDouble(raw['price']);
       final total = _toDouble(raw['total']);
       final quantity = _toDouble(raw['qty']).round();
-      final effectivePrice = price > 0
-          ? price
-          : total > 0 && quantity > 0
-          ? total / quantity
-          : 0.0;
-      if (effectivePrice <= 0) continue;
-      items.add(ReceiptItem(
-        name: name,
-        price: effectivePrice,
-        quantity: quantity > 0 ? quantity : 1,
-      ));
+      if (price > 0) {
+        items.add(ReceiptItem(
+          name: name,
+          price: price,
+          quantity: quantity > 0 ? quantity : 1,
+        ));
+      } else if (total > 0) {
+        // Only the line total is known: treat it as one purchase of that
+        // amount rather than dropping the item.
+        items.add(ReceiptItem(
+          name: name,
+          price: total,
+          quantity: 1,
+        ));
+      }
     }
     return items;
   }
@@ -108,6 +114,8 @@ class VeryfiService {
   /// Closes the underlying HTTP client.
   void close() => _client.close();
 }
+
+final _whitespace = RegExp(r'\s+');
 
 class VeryfiException implements Exception {
   const VeryfiException(this.message);

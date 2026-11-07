@@ -123,11 +123,11 @@ class _ReceiptScanPageState extends State<ReceiptScanPage>
 
 
       final reviewed = await showReceiptReview(context, items);
-      if (reviewed == null || reviewed.isEmpty || !mounted) return;
+      if (reviewed == null || reviewed.items.isEmpty || !mounted) return;
 
-      await ReceiptStore(widget.userId).save(reviewed);
+      await ReceiptStore(widget.userId).save(reviewed.items, reviewed.day);
       if (!mounted) return;
-      Navigator.of(context).pop(reviewed.length);
+      Navigator.of(context).pop(reviewed.items.length);
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
