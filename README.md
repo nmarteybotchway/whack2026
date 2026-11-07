@@ -1,5 +1,8 @@
 # whack2026
 
+See [Shopping assistant](docs/assistant.md) for assistant behavior, personality
+settings, data access and local verification.
+
 ## Data layout
 
 All data belonging to a user is stored in Firebase under `users/{uid}/`, where
