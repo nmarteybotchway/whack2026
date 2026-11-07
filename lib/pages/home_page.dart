@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../ai/food_check_demo.dart';
+import '../diet/diet_history_page.dart';
 // Health Connect is paused; keep the implementation for later.
 // import '../health_data/blood_pressure_page.dart';
 import '../health_data/body_measurements_page.dart';
@@ -28,7 +29,7 @@ class _Tab {
 
 const _leftTabs = [
   _Tab('Home', Icons.home_outlined, Icons.home),
-  _Tab('Track', Icons.timeline_outlined, Icons.timeline),
+  _Tab('History', Icons.history_outlined, Icons.history),
 ];
 
 const _rightTabs = [
@@ -49,7 +50,6 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final tab = _tabs[_index];
     return Scaffold(
       appBar: AppBar(
         backgroundColor: theme.colorScheme.inversePrimary,
@@ -64,13 +64,17 @@ class _HomePageState extends State<HomePage> {
       ),
       body: switch (_index) {
         0 => _HomeTab(user: widget.user),
+        1 => DietHistoryPage(
+          key: ValueKey(widget.user.uid),
+          userId: widget.user.uid,
+        ),
         // To restore watch syncing, use BloodPressurePage here.
         2 => BodyMeasurementsPage(
           key: ValueKey(widget.user.uid),
           userId: widget.user.uid,
         ),
         3 => SettingsPage(user: widget.user),
-        _ => _PlaceholderTab(tab: tab),
+        _ => const SizedBox.shrink(),
       },
       bottomNavigationBar: _BottomBar(
         index: _index,
@@ -211,25 +215,3 @@ class _HomeTab extends StatelessWidget {
   }
 }
 
-class _PlaceholderTab extends StatelessWidget {
-  const _PlaceholderTab({required this.tab});
-
-  final _Tab tab;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Center(
-      child: Column(
-        mainAxisSize: .min,
-        children: [
-          Icon(tab.selectedIcon, size: 64, color: theme.colorScheme.primary),
-          const SizedBox(height: 12),
-          Text(tab.label, style: theme.textTheme.headlineSmall),
-          const SizedBox(height: 4),
-          const Text('Coming soon'),
-        ],
-      ),
-    );
-  }
-}

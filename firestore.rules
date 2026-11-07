@@ -49,5 +49,17 @@ service cloud.firestore {
         && request.resource.data.unit == 'mmHg'
         && request.resource.data.provider == 'health_connect';
     }
+    match /users/{uid}/receipts/{receiptId} {
+      allow read, delete: if owner(uid);
+      allow create, update: if owner(uid)
+        && request.resource.data.keys().hasAll(['scannedAt', 'items', 'total'])
+        && request.resource.data.keys().hasOnly(['scannedAt', 'items', 'total'])
+        && request.resource.data.scannedAt is timestamp
+        && request.resource.data.items is list
+        && request.resource.data.items.size() <= 200
+        && request.resource.data.total is number
+        && request.resource.data.total >= -100000
+        && request.resource.data.total <= 100000;
+    }
   }
 }
