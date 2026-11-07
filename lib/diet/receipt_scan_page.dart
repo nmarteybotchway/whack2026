@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 
+import '../theme.dart';
 import 'receipt_parser.dart';
 import 'receipt_review_sheet.dart';
 import 'receipt_store.dart';
@@ -212,7 +213,7 @@ class _ReceiptScanPageState extends State<ReceiptScanPage>
               child: FloatingActionButton(
                 tooltip: 'Capture receipt',
                 shape: const CircleBorder(),
-                backgroundColor: Colors.green,
+                backgroundColor: AppTheme.seed,
                 foregroundColor: Colors.white,
                 onPressed: _busy ? null : _capture,
                 child: _busy

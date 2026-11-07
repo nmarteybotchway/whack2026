@@ -41,6 +41,19 @@ void main() {
     expect(Preference.fromLabel('None'), isNull);
   });
 
+  test('every preference is a settings option that maps back', () {
+    expect(
+      {...Preference.religions, ...Preference.dietary},
+      {...Preference.preferences},
+    );
+    for (final p in Preference.preferences) {
+      expect(Preference.fromLabel(p.label), p);
+    }
+    for (final belief in Preference.otherBeliefs) {
+      expect(Preference.fromLabel(belief), isNull);
+    }
+  });
+
   test('none is never a clash', () {
     final food = Food.fromMap({
       'food': 'Apples',

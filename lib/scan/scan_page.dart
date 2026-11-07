@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 
 import '../assistant/assistant_controller.dart';
 import '../assistant/assistant_page.dart';
+import '../food/food_recommendation_service.dart';
 import '../food_news.dart';
+import '../theme.dart';
 import 'analysis_result_sheet.dart';
 import 'camera_analysis.dart';
 import 'frame_gate.dart';
@@ -228,7 +230,15 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
         },
         if (result.error != null) 'error': result.error,
       });
-      await showAnalysisResult(context, result, newsService: FoodNewsService());
+      await showAnalysisResult(
+        context,
+        result,
+        newsService: FoodNewsService(),
+        recommendationService: widget.userId == null
+            ? null
+            : FoodRecommendationService(),
+        userId: widget.userId,
+      );
     }
     if (mounted && _controller == controller) await _startStream();
   }
@@ -345,7 +355,7 @@ class _CaptureButton extends StatelessWidget {
       child: FloatingActionButton(
         tooltip: 'Analyse frame',
         shape: const CircleBorder(),
-        backgroundColor: Colors.green,
+        backgroundColor: AppTheme.seed,
         foregroundColor: Colors.white,
         onPressed: busy ? null : onPressed,
         child: busy
