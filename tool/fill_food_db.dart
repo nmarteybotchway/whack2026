@@ -2,7 +2,8 @@
 ///
 /// 1. `fill_food`: add new foods, refresh news on existing ones.
 /// 2. `dedupe_food`: merge foods that are the same under different names.
-/// 3. `generate_food`: regenerate `lib/food/known_foods.g.dart`.
+/// 3. `fill_food_images`: find an image for each food and alternative.
+/// 4. `generate_food`: regenerate `lib/food/known_foods.g.dart`.
 ///
 /// ```sh
 /// dart run tool/fill_food_db.dart food.txt            # update Firestore
@@ -11,7 +12,7 @@
 /// ```
 ///
 /// Foods that fail in step 1 are reported but do not stop the later steps.
-/// A dry run skips step 3, since nothing in Firestore changed. `--full`
+/// A dry run skips step 4, since nothing in Firestore changed. `--full`
 /// regenerates existing foods instead of only refreshing their news.
 library;
 
@@ -19,6 +20,7 @@ import 'dart:io';
 
 import 'dedupe_food.dart' as dedupe;
 import 'fill_food.dart' as fill;
+import 'fill_food_images.dart' as images;
 import 'generate_food.dart' as generate;
 
 Future<void> main(List<String> arguments) async {
@@ -31,15 +33,18 @@ Future<void> main(List<String> arguments) async {
     exit(64);
   }
 
-  stdout.writeln('== 1/3 Fill ==');
+  stdout.writeln('== 1/4 Fill ==');
   await fill.main(arguments);
   // fill_food sets exitCode when some foods fail; keep it for the end.
   final fillFailed = exitCode != 0;
 
-  stdout.writeln('\n== 2/3 Dedupe ==');
+  stdout.writeln('\n== 2/4 Dedupe ==');
   await dedupe.main([if (dryRun) '--dry-run']);
 
-  stdout.writeln('\n== 3/3 Generate ==');
+  stdout.writeln('\n== 3/4 Images ==');
+  await images.main([if (dryRun) '--dry-run']);
+
+  stdout.writeln('\n== 4/4 Generate ==');
   if (dryRun) {
     stdout.writeln('Skipped (dry run).');
   } else {

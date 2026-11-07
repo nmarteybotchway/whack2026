@@ -5,7 +5,7 @@
 /// dart run tool/generate_food.dart
 /// ```
 ///
-/// Step 3 of tool/fill_food_db.dart, which runs the whole pipeline.
+/// Step 4 of tool/fill_food_db.dart, which runs the whole pipeline.
 library;
 
 import 'dart:io';
