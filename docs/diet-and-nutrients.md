@@ -4,8 +4,8 @@ Receipts are photographed, turned into food names, stored per day under the
 user, enriched with vitamins and minerals from USDA FoodData Central, and kept
 for a sliding two-week window. The window, together with foods logged through
 the assistant, feeds the nutrient tracker, the home-screen garden, and the
-scan recommender. A separate nutrient garden on the home page shows three Rive
-trees.
+scan recommender. A separate nutrient garden fills the home page with a painted
+sunrise valley.
 
 | File | Role |
 | --- | --- |
@@ -20,7 +20,8 @@ trees.
 | `lib/diet/nutrient_tracker_page.dart` | `NutrientTrackerPage` (opened from the History tab) |
 | `lib/diet/diet_history_page.dart` | `DietHistoryPage`: receipt days and manual food logs |
 | `lib/food/nutrient.dart` | `Nutrient` enum: shorthand ids, units, reference amounts |
-| `lib/garden/nutrient_garden.dart` | `NutrientGarden`: three Rive trees |
+| `lib/garden/nutrient_garden.dart` | `NutrientGarden`: loads the score, shows the valley |
+| `lib/garden/sunrise_valley.dart` | `SunriseValley`: the `CustomPainter` scene |
 | `lib/garden/nutrient_score_service.dart` | `NutrientScoreService`: 0..1 score from `NutrientInsights` |
 
 ## Data flow
@@ -326,22 +327,23 @@ footnote.
 scan counter in `_HomePageState`, so it reloads after the scan page closes).
 It loads `NutrientInsights.load(userId)` (injectable `loader`), scores it with
 `NutrientScoreService.scoreFromInsights`, and animates the trees to the new
-score over 800 ms with a `TweenAnimationBuilder`.
+score over 800 ms with a `TweenAnimationBuilder`. It expands to fill its
+parent; the home tab stacks it under the greeting and the `Scaffold`
+extends the body behind the status bar and bottom bar.
 
 | State | Shown |
 | --- | --- |
-| Loading | Trees at 0 (same 180 px height) |
-| Error | Logged with `debugPrint`; trees stay at 0 |
-| `insights.isEmpty` | Trees at 0 plus "Scan a receipt to grow your garden" |
-| Otherwise | Trees at the score |
+| Loading | Valley at 0 |
+| Error | Logged with `debugPrint`; valley stays at 0 |
+| `insights.isEmpty` | Valley at 0 plus "Scan a receipt to grow your garden" above the bottom bar |
+| Otherwise | Valley at the score |
 
-The trees come from `assets/rive/tree_demo.riv` (package `rive`), three in a
-row with scales 0.55 (left), 1.0 (centre), 0.75 (right). Each `_Tree` creates
-its `RiveWidgetController` (`StateMachineNamed('State Machine 1')`) once,
-finds the first `NumberInput` once, sets it to
-`progress.clamp(0, 1) * 80 * scale` on every progress change, and disposes
-both in `dispose`. A perfect score reaches 80 % of the input's 0–100 range on
-the centre tree. Tests replace the Rive trees through `treesBuilder`.
+`SunriseValley(progress:)` is a single `CustomPainter`: a sunrise sky, sun,
+clouds and birds, layered ridges with mist bands, a meadow, and an S-curve
+river that widens toward the viewer. `progress` drives the sky warmth, the
+meadow green and how many trees and tufts appear and how big they grow,
+from sparse saplings at 0 to a full valley at 1. Positions are seeded, so the
+scene is the same on every build. Tests replace it through `treesBuilder`.
 
 ### `NutrientScoreService`
 

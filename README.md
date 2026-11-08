@@ -36,8 +36,8 @@ condition and don't want to read every label.
   Central and are cached in Firestore. Average daily intake is compared
   with UK adult reference values (sodium is treated as a limit). The
   tracker opens from the History tab.
-- **Nutrient garden.** Three animated Rive trees on the home screen grow
-  as your recent diet meets the same vitamin and mineral targets as the
+- **Nutrient garden.** The home screen is a full-screen sunrise river valley
+  that grows lusher as your recent diet meets the same vitamin and mineral targets as the
   tracker, and shrink when you go over the sodium limit. With no diet data
   yet, a hint suggests scanning a receipt.
 - **Shopping assistant.** A chat tab that runs on OpenRouter with tool
@@ -106,7 +106,7 @@ flowchart LR
 
 Flutter (Dart SDK `^3.13.7`, Material 3) · Firebase Auth and Cloud Firestore ·
 `camera` · `google_mlkit_text_recognition` · `speech_to_text` and
-`flutter_tts` · `rive` · `shared_preferences` · `http` and `crypto` (for
+`flutter_tts` · `shared_preferences` · `http` and `crypto` (for
 Veryfi request signing) · Kotlin Health Connect bridge on Android ·
 Python for the Firestore rules test and the Tesco store snapshot.
 
@@ -203,7 +203,7 @@ accepts `--dry-run`.
 | `lib/food_news/` | Food news lookup from the `food` collection |
 | `lib/foodbase/` | FoodBase product-photo API client |
 | `lib/diet/` | Receipt scanning (Veryfi and ML Kit), diet store, 14-day window, USDA nutrition, tracker and history pages |
-| `lib/garden/` | Rive nutrient garden and nutrient score service |
+| `lib/garden/` | Nutrient garden (painted sunrise valley) and nutrient score service |
 | `lib/assistant/` | Assistant controller, models, Firestore tool repository, chat and settings pages |
 | `lib/services/` | Speech-to-text and text-to-speech wrappers |
 | `lib/openrouter/` | OpenRouter chat-completions client (structured JSON, images) |
@@ -213,7 +213,7 @@ accepts `--dry-run`.
 | `lib/ai/` | Earlier OpenRouter-based food compliance check and demo; not wired into the app |
 | `tool/` | Food catalogue pipeline and Tesco data scripts |
 | `test/` | Dart unit and widget tests, plus `test/firestore/` emulator rules test |
-| `assets/` | `tesco_stores.json`, `rive/tree_demo.riv` |
+| `assets/` | `tesco_stores.json`, TTS model files |
 
 ## Firestore data layout
 
