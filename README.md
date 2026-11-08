@@ -254,4 +254,4 @@ Shared collections can be read by any signed-in user. The rules are in
 - [Health data](docs/health-data.md)
 - [Shopping assistant](docs/assistant.md)
 - [Voice assistant plan](docs/voice-assistant-plan.md)
-- [Health data module notes](lib/health_data/README.md)
+- [Health data module notes](lib/health_data/README.md) (`lib/health_data/`)
