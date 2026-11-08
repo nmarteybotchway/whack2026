@@ -1,8 +1,12 @@
+import 'dart:async';
+import 'dart:math' show Random, cos, pi, sin;
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../assistant/assistant_controller.dart';
+import '../diet/swap_points.dart';
 import '../food/food_matcher.dart';
 import '../food/food_recommendation_service.dart';
 import '../food_news.dart';
@@ -795,19 +799,13 @@ class _RecommendationCardState extends State<_RecommendationCard> {
                         ],
                       ),
                       const SizedBox(height: 8),
-                      for (final alt in r.alternatives.take(3))
+                      for (final (index, alt) in r.alternatives.take(3).indexed)
                         Padding(
-                          padding: const EdgeInsets.only(bottom: 4),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.check,
-                                size: 16,
-                                color: theme.colorScheme.primary,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(alt, style: theme.textTheme.bodyMedium),
-                            ],
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: _AlternativeBar(
+                            label: alt,
+                            onTap: () => _chooseAlternative(context, alt),
+                            key: ValueKey('alt-$index'),
                           ),
                         ),
                       // Side note: which of the user's low nutrients these
@@ -853,6 +851,276 @@ class _RecommendationCardState extends State<_RecommendationCard> {
   }
 
   Future<String>? _cachedSummary;
+
+  /// The shopper committed to a healthier choice: celebrate it, bank the
+  /// points, and pop back to the home page.
+  Future<void> _chooseAlternative(BuildContext context, String alt) async {
+    final uid = widget.userId;
+    if (uid != null) await _awardSwapPoints(uid, kSwapPoints);
+    await showConfettiSpray(context, message: '+$kSwapPoints · $alt');
+    if (context.mounted) Navigator.of(context).pop(kHomeTabOnSwap);
+  }
+}
+
+/// Home-page tab index returned when an alternative is chosen.
+const int kHomeTabOnSwap = 0;
+
+/// Banks [points] on the user's Firestore profile so the leaderboard can
+/// show a real running total. Best-effort: a failure only skips the bank.
+Future<void> _awardSwapPoints(String uid, int points) async {
+  try {
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .set(<String, Object>{
+          'swapPoints': FieldValue.increment(points),
+        }, SetOptions(merge: true));
+  } on FirebaseException {
+    // Points stay unbanked; the celebration still plays.
+  }
+}
+
+/// Sprays confetti over the current screen, shows [message], then removes
+/// itself. Resolves once the overlay is fully gone so callers can navigate
+/// straight after.
+Future<void> showConfettiSpray(
+  BuildContext context, {
+  String message = '+25 points',
+}) async {
+  final overlay =
+      Overlay.of(context, rootOverlay: true);
+  final completer = Completer<void>();
+  late final OverlayEntry entry;
+  entry = OverlayEntry(
+    builder: (_) => _ConfettiOverlay(
+      message: message,
+      onFinished: () {
+        if (entry.mounted) entry.remove();
+        if (!completer.isCompleted) completer.complete();
+      },
+    ),
+  );
+  overlay.insert(entry);
+  return completer.future;
+}
+
+/// Full-screen confetti burst with the points message and a "Well done!"
+/// toast, then the overlay fades out and [onFinished] fires so the caller
+/// navigates home. The whole sequence runs about three seconds.
+class _ConfettiOverlay extends StatefulWidget {
+  const _ConfettiOverlay({required this.message, required this.onFinished});
+
+  final String message;
+  final VoidCallback onFinished;
+
+  @override
+  State<_ConfettiOverlay> createState() => _ConfettiOverlayState();
+}
+
+class _ConfettiOverlayState extends State<_ConfettiOverlay>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 3200),
+  )..forward();
+  late final Animation<double> _fade = CurvedAnimation(
+    parent: _controller,
+    curve: const Interval(0.75, 1, curve: Curves.easeIn),
+  );
+  late final List<_ConfettiPiece> _pieces;
+
+  @override
+  void initState() {
+    super.initState();
+    final random = Random();
+    _pieces = [
+      for (var i = 0; i < 110; i++)
+        _ConfettiPiece(
+          color: _confettiColors[random.nextInt(_confettiColors.length)],
+          startX: random.nextDouble(),
+          size: 6 + random.nextDouble() * 8,
+          drift: (random.nextDouble() - 0.5) * 120,
+          spin: (random.nextDouble() - 0.5) * 6 * pi,
+          speed: 0.5 + random.nextDouble() * 0.5,
+          delay: random.nextDouble() * 0.18,
+          rectangle: random.nextBool(),
+        ),
+    ];
+    _controller.addStatusListener((status) {
+      if (status == AnimationStatus.completed) widget.onFinished();
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  static const _confettiColors = [
+    Color(0xFFE53935),
+    Color(0xFFFFB300),
+    Color(0xFF43A047),
+    Color(0xFF1E88E5),
+    Color(0xFF8E24AA),
+    Color(0xFFFF7043),
+    Color(0xFFFDD835),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) {
+          final t = _controller.value;
+          return Stack(
+            children: [
+              for (final piece in _pieces)
+                _ConfettiParticle(
+                  piece: piece,
+                  t: ((t - piece.delay) / piece.speed).clamp(0.0, 1.0),
+                ),
+              Center(
+                child: FadeTransition(
+                  opacity: _fade,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black87,
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          widget.message,
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleMedium
+                              ?.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Well done! 🎉',
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodyMedium
+                              ?.copyWith(color: Colors.white),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _ConfettiPiece {
+  const _ConfettiPiece({
+    required this.color,
+    required this.startX,
+    required this.size,
+    required this.drift,
+    required this.spin,
+    required this.speed,
+    required this.delay,
+    required this.rectangle,
+  });
+
+  final Color color;
+  final double startX;
+  final double size;
+  final double drift;
+  final double spin;
+  final double speed;
+  final double delay;
+  final bool rectangle;
+}
+
+class _ConfettiParticle extends StatelessWidget {
+  const _ConfettiParticle({required this.piece, required this.t});
+
+  final _ConfettiPiece piece;
+  final double t;
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    final progress = Curves.easeOutQuad.transform(t);
+    final fall = progress * size.height * 0.85;
+    final sway = sin(progress * 4 * pi) * piece.drift;
+    final x = piece.startX * size.width + sway;
+    final y = -20 + fall;
+    return Positioned(
+      left: x,
+      top: y,
+      child: Transform.rotate(
+        angle: piece.spin * progress,
+        child: Container(
+          width: piece.rectangle ? piece.size : piece.size,
+          height: piece.rectangle ? piece.size * 1.6 : piece.size,
+          color: piece.color.withOpacity(1 - t * 0.6),
+        ),
+      ),
+    );
+  }
+}
+
+/// One tappable healthier-choice option.
+class _AlternativeBar extends StatelessWidget {
+  const _AlternativeBar({super.key, required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.surface,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: theme.colorScheme.primary.withValues(alpha: 0.4),
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.check, size: 16, color: theme.colorScheme.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(label, style: theme.textTheme.bodyMedium),
+              ),
+              Icon(
+                Icons.arrow_forward_ios,
+                size: 12,
+                color: theme.colorScheme.primary,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// Short reason labels for why [r]'s food is not recommended.
