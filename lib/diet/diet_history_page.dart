@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+import '../pantry_news/flagged_items_card.dart';
+import '../pantry_news/pantry_news_controller.dart';
 import 'diet_summary_card.dart';
 import 'diet_window_service.dart';
 import 'nutrient_tracker_page.dart';
@@ -13,9 +15,13 @@ import 'swap_points.dart' show kSwapPoints;
 /// Diet history: scan grocery receipts and browse the stored diet, organised
 /// by the day the food was bought.
 class DietHistoryPage extends StatefulWidget {
-  const DietHistoryPage({super.key, required this.userId});
+  const DietHistoryPage({super.key, required this.userId, this.pantryNews});
 
   final String userId;
+
+  /// The pantry tracker whose flagged items are listed on this page; null
+  /// (e.g. in tests) hides the flagged-items section.
+  final PantryNewsController? pantryNews;
 
   @override
   State<DietHistoryPage> createState() => _DietHistoryPageState();
@@ -176,6 +182,9 @@ class _DietHistoryPageState extends State<DietHistoryPage>
         ),
         const SizedBox(height: 16),
         DietSummaryCard(userId: userId),
+        const SizedBox(height: 8),
+        if (widget.pantryNews != null)
+          FlaggedItemsCard(controller: widget.pantryNews!),
         const SizedBox(height: 8),
         StreamBuilder<List<DietDay>>(
           stream: _days,

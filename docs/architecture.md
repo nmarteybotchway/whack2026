@@ -14,6 +14,7 @@ has its own page that goes deeper:
 | Food recommendations / alternatives | [recommendations.md](recommendations.md) |
 | Shared `food` database and `tool/` pipeline | [food-data.md](food-data.md) |
 | Voice/chat assistant | [assistant.md](assistant.md) |
+| Pantry news demo (delayed notifications) | [pantry-news.md](pantry-news.md) |
 
 ## Entry point and wiring
 
