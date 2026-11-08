@@ -158,7 +158,7 @@ service cloud.firestore {
         ])
         && request.resource.data.keys().hasOnly([
           'food', 'alternatives', 'health_conditions', 'personal_prefs',
-          'local_news', 'general_info', 'nutrients', 'updatedAt'
+          'local_news', 'general_info', 'sources', 'nutrients', 'updatedAt'
         ])
         && request.resource.data.food is string
         && request.resource.data.alternatives is map
@@ -166,7 +166,8 @@ service cloud.firestore {
         && request.resource.data.personal_prefs is list
         && request.resource.data.local_news is string
         && request.resource.data.general_info is string
-        // Optional: foods stored before nutrients existed have none.
+        // Optional: foods stored before sources/nutrients existed have none.
+        && (!('sources' in request.resource.data) || request.resource.data.sources is list)
         && (!('nutrients' in request.resource.data) || request.resource.data.nutrients is map);
     }
     match /food_images/{imageId} {

@@ -120,7 +120,8 @@ Future<List<({String name, List<String> ids})>> findDuplicates(
 
 /// Combines [parts] into one food called [name]: sets are unioned,
 /// alternatives are joined per condition/preference pair in first-seen order,
-/// the first general info is kept, and distinct news is joined.
+/// the first general info is kept, distinct news is joined, and sources are
+/// unioned in first-seen order.
 Food _merge(String name, List<Food> parts) {
   final ids = {Food.idFor(name), for (final f in parts) f.id};
 
@@ -149,5 +150,8 @@ Food _merge(String name, List<Food> parts) {
       for (final f in parts)
         if (f.hasNews) f.localNews,
     }.join('\n\n'),
+    sources: {
+      for (final f in parts) ...f.sources,
+    }.toList(),
   );
 }
