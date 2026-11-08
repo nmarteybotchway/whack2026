@@ -34,17 +34,22 @@ void main() {
       expect(midnight.sunHeight, closeTo(-1, 1e-9));
     });
 
-    test('holds a season, then turns during its last day', () {
-      // Whole for the first days of spring.
-      for (var t = 0.0; t < _seasonLength * 0.65; t += _day / 4) {
+    test('holds a season through the day, then turns overnight', () {
+      // Whole spring from sunrise until dusk on its last day.
+      final lastDusk =
+          _seasonLength - _day + _day * ValleyClock.daylightShare;
+      for (var t = 0.0; t <= lastDusk; t += _day / 8) {
         expect(ValleyClock(t).season, 0);
       }
-      // Fully summer by the end of spring's last day.
+      // Mid-blend in the dark.
+      final midnight = ValleyClock(
+        _seasonLength - _day * (1 - ValleyClock.daylightShare) / 2,
+      );
+      expect(midnight.season, inExclusiveRange(0.0, 1.0));
+      expect(midnight.sunHeight, lessThan(0));
+      // Fully summer by the next sunrise.
       expect(ValleyClock(_seasonLength - 1).season, closeTo(1, 1e-9));
-      // The hand-over happens in daylight.
-      final mid = ValleyClock(_seasonLength - _day + _day * 0.32);
-      expect(mid.season, inExclusiveRange(0.0, 1.0));
-      expect(mid.sunHeight, greaterThan(0));
+      expect(ValleyClock(ValleyClock.sunriseOf(ValleySeason.summer)).season, 1);
     });
 
     test('wraps from winter back to spring', () {

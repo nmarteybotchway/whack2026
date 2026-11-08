@@ -10,8 +10,8 @@ import 'package:flutter/scheduler.dart';
 /// winds from the horizon toward the viewer in an S-curve, widening as it
 /// comes near. The scene runs a day/night cycle ([ValleyClock.dayLength]):
 /// the sun arcs across the sky, then a moon and stars come out. Every
-/// [ValleyClock.daysPerSeason] days the season turns, blending over the
-/// last day's daylight. Clouds drift, trees and grass sway in the wind, and
+/// [ValleyClock.daysPerSeason] day/night cycles the season turns, blending
+/// overnight so each morning opens on the next one. Clouds drift, trees and grass sway in the wind, and
 /// light flows down the water.
 ///
 /// [progress] (0.0-1.0) drives lushness: sparse saplings at 0, a full valley
@@ -139,7 +139,7 @@ class ValleyClock {
   static const daylightShare = 0.65;
 
   /// Day/night cycles per season.
-  static const daysPerSeason = 3;
+  static const daysPerSeason = 1;
 
   /// Scene time just after sunrise on the first day of [season].
   static double sunriseOf(ValleySeason season) =>
@@ -161,15 +161,17 @@ class ValleyClock {
   double get sunHeight => math.sin(sunAngle);
 
   /// Continuous season: 0 spring, 1 summer, 2 autumn, 3 winter, wrapping
-  /// at 4. Holds each whole season, then blends into the next during the
-  /// daylight of the season's last day.
+  /// at 4. Holds each whole season through its days, then blends into the
+  /// next during the night that ends its last day.
   double get season {
     final position = seconds / (dayLength * daysPerSeason);
     final whole = position.floorToDouble();
-    final lastDay = (daysPerSeason - 1) / daysPerSeason;
-    final dayStart = lastDay + 0.1 * daylightShare / daysPerSeason;
-    final dayEnd = lastDay + 0.9 * daylightShare / daysPerSeason;
-    final blend = _smoothstep(dayStart, dayEnd, position - whole);
+    // The last night of the season, as a share of the whole season. The
+    // blend starts after dusk and finishes before the next sunrise.
+    final dusk = (daysPerSeason - 1 + daylightShare) / daysPerSeason;
+    final night = (1 - daylightShare) / daysPerSeason;
+    final blend = _smoothstep(dusk + 0.15 * night, dusk + 0.85 * night,
+        position - whole);
     return (whole + blend) % 4;
   }
 
