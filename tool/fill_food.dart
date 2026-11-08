@@ -8,7 +8,8 @@
 ///
 /// `food.txt` holds one food per line; blank lines and `#` comments are
 /// skipped. New foods get health conditions, personal prefs, general info and
-/// local news from OpenRouter with web search, then a second call (without
+/// local news from OpenRouter with web search (the reply also lists the
+/// URLs the answer came from as `sources`), then a second call (without
 /// search) fills the alternatives for each condition/preference pair, and a
 /// third fills the vitamins and minerals per 100 g. Foods already stored
 /// only have their local news refreshed (and their nutrients filled if they
@@ -37,6 +38,10 @@ const _area = 'Coventry and the UK';
 /// How far back `local_news` looks; older events are left out.
 const _newsDays = 30;
 
+/// The hard cap on `local_news` and `general_info` length; the prompts ask
+/// for at most this many characters, and the code clamps to it.
+const _newsMaxChars = 200;
+
 const _newsRules =
     '''
 "local_news" is ONLY an active food-safety event affecting this food for
@@ -47,18 +52,29 @@ the last $_newsDays days, and it must affect Coventry, the West Midlands or
 the UK as a whole: UK outbreaks, Food Standards Agency (FSA) alerts and
 recalls, or products sold in UK shops. Prefer events in Coventry or the West
 Midlands, then UK-wide ones. Ignore events elsewhere unless the affected
-product is sold in the UK. Write one or two plain sentences naming the
-problem, where in the UK it applies, and the date it was reported, with no
-links or citations. General nutrition news, studies and diet advice do not
-count. If nothing recent qualifies, or you cannot confirm it from search
-results, return an empty string. Never invent an event.''';
+product is sold in the UK. Summarise the event in ONE short plain sentence of
+at most 200 characters (count them), naming the problem, where in the UK it
+applies and the date it was reported, with no links or citations in the text.
+If the event does not fit in 200 characters, leave out the least important
+details rather than running long. General nutrition news, studies and diet
+advice do not count. If nothing recent qualifies, or you cannot confirm it
+from search results, return an empty string and an empty "sources" list.
+Never invent an event.
+
+"sources" is the list of URLs of the pages the answer is based on (search
+results actually consulted, e.g. FSA or news articles). One URL per entry,
+each starting https://. Empty when the answer is an empty string.''';
 
 final _newsSchema = {
   'type': 'object',
   'properties': {
     'local_news': {'type': 'string'},
+    'sources': {
+      'type': 'array',
+      'items': {'type': 'string'},
+    },
   },
-  'required': ['local_news'],
+  'required': ['local_news', 'sources'],
   'additionalProperties': false,
 };
 
@@ -81,12 +97,17 @@ final _fullSchema = {
     },
     'general_info': {'type': 'string'},
     'local_news': {'type': 'string'},
+    'sources': {
+      'type': 'array',
+      'items': {'type': 'string'},
+    },
   },
   'required': [
     'health_conditions',
     'personal_prefs',
     'general_info',
     'local_news',
+    'sources',
   ],
   'additionalProperties': false,
 };
@@ -216,9 +237,13 @@ Future<void> _fill(
       '$_newsRules\nReply as JSON.',
       _newsSchema,
     );
-    final news = (reply['local_news'] as String).trim();
+    final news = _clamped((reply['local_news'] as String).trim());
+    final sources = _sources(reply);
     stdout.writeln('↻ $name: news ${news.isEmpty ? '(none)' : '"$news"'}');
-    if (!dryRun) await store.write(id, {'local_news': news}, create: false);
+    if (!dryRun) {
+      await store.write(id, {'local_news': news, 'sources': sources},
+          create: false);
+    }
     return;
   }
 
@@ -243,11 +268,17 @@ Future<void> _fill(
     'mainstream dietary rules. Use an empty list if none apply.\n'
     '$preferences\n\n'
     '"general_info": a reason why even a healthy person with no health '
-    'conditions or dietary preferences should avoid or limit this food, in one '
-    'or two plain sentences (e.g. bacon: processed meat classed as a cause of '
-    'cancer, high in saturated fat and salt). Use an empty string if the food '
-    'is fine for a healthy person as part of a normal diet (e.g. apples, '
-    'cabbage, eggs). Do not describe the food or its benefits.\n\n'
+    'conditions or dietary preferences should avoid or limit this food, in '
+    'ONE short plain sentence of at most $_newsMaxChars characters (count '
+    'them; e.g. bacon: processed meat classed as a cause of cancer, high in '
+    'saturated fat and salt). It is a summary, not a description: no '
+    'benefits, no advice, no examples of dishes. Use an empty string if the '
+    'food is fine for a healthy person as part of a normal diet (e.g. '
+    'apples, cabbage, eggs).\n\n'
+    '"sources": the URLs of the pages (search results actually consulted) '
+    'that support the health_conditions, general_info and local_news answers. '
+    'One URL per entry, each starting https://; repeat a URL once even if it '
+    'supports several answers. Empty list when local_news is empty.\n\n'
     '$_newsRules\n\nReply as JSON.',
     _fullSchema,
   );
@@ -264,7 +295,8 @@ Future<void> _fill(
           when p != Preference.none)
         p,
   };
-  final generalInfo = (reply['general_info'] as String).trim();
+  final generalInfo = _clamped((reply['general_info'] as String).trim());
+  final sources = _sources(reply);
   final food = Food(
     name: name,
     alternatives: await _alternatives(
@@ -277,7 +309,8 @@ Future<void> _fill(
     healthConditions: healthConditions,
     personalPrefs: personalPrefs,
     generalInfo: generalInfo,
-    localNews: (reply['local_news'] as String).trim(),
+    localNews: _clamped((reply['local_news'] as String).trim()),
+    sources: sources,
     nutrients: await _nutrients(ai, name),
   );
   stdout.writeln(
@@ -286,6 +319,7 @@ Future<void> _fill(
     ' | alternatives: ${food.toMap()['alternatives']}'
     ' | general_info: ${food.generalInfo.isEmpty ? '(none)' : '"${food.generalInfo}"'}'
     ' | local_news: ${food.hasNews ? '"${food.localNews}"' : '(none)'}'
+    ' | sources: ${sources.isEmpty ? '(none)' : sources.length}'
     ' | nutrients: ${_describe(food.nutrients)}',
   );
   if (dryRun) return;
@@ -402,6 +436,19 @@ Future<Map<Nutrient, double>> _nutrients(
 String _describe(Map<Nutrient, double> nutrients) => nutrients.isEmpty
     ? '(none)'
     : nutrients.entries.map((e) => '${e.key.id} ${e.value}').join(', ');
+
+/// The `sources` URLs from a web-search reply: strings starting https://,
+/// deduplicated in first-seen order.
+List<String> _sources(Map<String, dynamic> reply) => {
+  for (final s in reply['sources'] as List? ?? const [])
+    if (s is String && s.startsWith('https://')) s,
+}.toList();
+
+/// The `local_news`/`general_info` from a web-search reply, clamped to the
+/// hard cap the prompts ask for (models sometimes ignore it).
+String _clamped(String reply) => reply.length > _newsMaxChars
+    ? '${reply.substring(0, _newsMaxChars)}…'
+    : reply;
 
 Future<Map<String, dynamic>> _ask(
   OpenRouterService ai,
