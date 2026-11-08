@@ -5,6 +5,7 @@ import '../food/food_matcher.dart';
 import '../food/food_recommendation_service.dart';
 import '../food_news.dart';
 import '../theme.dart';
+import 'alert_summary_service.dart';
 import 'camera_analysis.dart';
 import 'product_identification_service.dart';
 
@@ -61,6 +62,9 @@ class AnalysisResultSheet extends StatefulWidget {
 class _AnalysisResultSheetState extends State<AnalysisResultSheet> {
   bool _skipSwap = false;
   bool _savingOverride = false;
+
+  /// Summarises the stored news/recommendation texts into one sentence.
+  final AlertSummaryService _summary = AlertSummaryService();
 
   String _itemKey(String name) =>
       name.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
@@ -199,6 +203,7 @@ class _AnalysisResultSheetState extends State<AnalysisResultSheet> {
                 userId: widget.userId!,
                 foodName: _newsFoodName(result.identification!),
                 hideAlternatives: _skipSwap,
+                summary: _summary,
               ),
             ],
             const SizedBox(height: 16),
@@ -306,6 +311,25 @@ String _newsFoodName(ProductIdentification product) {  final productName = produ
           ?.food
           .name ??
       name;
+}
+
+/// The first sentence or two of a stored explanation, so scan results stay
+/// short: at most two sentences, capped at ~220 characters, with an ellipsis
+/// when text was cut off.
+String _condense(String text) {
+  final trimmed = text.trim().replaceAll(RegExp(r'\s+'), ' ');
+  if (trimmed.length <= 220) return trimmed;
+  final matches = RegExp(r'.*?[.!?]').allMatches(trimmed).take(2).toList();
+  final condensed = matches.isEmpty
+      ? trimmed
+      : trimmed.substring(0, matches.last.end);
+  if (condensed.length > 220) {
+    final cut = trimmed.substring(0, 217).trimRight();
+    return RegExp(r'.*?[.!?]').firstMatch(cut)?.end != null
+        ? '${trimmed.substring(0, RegExp(r'.*?[.!?]').firstMatch(cut)!.end)}…'
+        : '$cut…';
+  }
+  return condensed.length < trimmed.length ? '$condensed…' : condensed;
 }
 
 /// Food news alert for a scanned product: a green no-news card when the
@@ -435,12 +459,14 @@ class _RecommendationCard extends StatefulWidget {
     required this.userId,
     required this.foodName,
     this.hideAlternatives = false,
+    required this.summary,
   });
 
   final FoodRecommendationService service;
   final String userId;
   final String foodName;
   final bool hideAlternatives;
+  final AlertSummaryService summary;
 
   @override
   State<_RecommendationCard> createState() => _RecommendationCardState();
@@ -509,8 +535,8 @@ class _RecommendationCardState extends State<_RecommendationCard> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Safe to buy: no news or general info and it matches '
-                      'none of your preferences or health data.'
+                      'Safe to buy: no alerts, and it matches none of your '
+                      'preferences or health data.'
                       '${_boostText(r)}',
                       style: theme.textTheme.bodyMedium,
                     ),
@@ -563,26 +589,28 @@ class _RecommendationCardState extends State<_RecommendationCard> {
                   ],
                 ),
                 const SizedBox(height: 8),
+                // One AI summary sentence built from all the reasons; the
+                // truncated reason list shows while it loads or if the
+                // summariser is unavailable.
+                // Personal clashes first (conditions/preferences), then the
+                // AI one-sentence summary of the full explanation below.
                 if (_reasons(r) case final reasons when reasons.isNotEmpty)
-                  Text(reasons.join(' · '), style: theme.textTheme.bodyMedium),
-                if (r.hasGeneralInfo ||
-                    r.clashingConditions.isNotEmpty ||
-                    r.clashingPrefs.isNotEmpty) ...[
-                  const SizedBox(height: 6),
                   Text(
-                    _personalizedRationale(r),
+                    reasons.join(' · '),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                const SizedBox(height: 4),
+                FutureBuilder<String>(
+                  future: _summaryLine(r),
+                  builder: (context, summarySnap) => Text(
+                    summarySnap.hasData && summarySnap.data!.isNotEmpty
+                        ? summarySnap.data!
+                        : _condense(r.generalInfo ?? ''),
                     style: theme.textTheme.bodyMedium,
                   ),
-                ],
-                if (r.excessNutrients.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    'Your recent diet is already over the daily limit for '
-                    '${r.excessNutrients.map((n) => n.label.toLowerCase()).join(' and ')}, '
-                    'and this food is high in it.',
-                    style: theme.textTheme.bodyMedium,
-                  ),
-                ],
+                ),
                 if (r.boostsNutrients.isNotEmpty) ...[
                   const SizedBox(height: 6),
                   Text(_boostText(r).trim(), style: theme.textTheme.bodySmall),
@@ -602,6 +630,28 @@ class _RecommendationCardState extends State<_RecommendationCard> {
     );
   }
 
+  /// The AI one-sentence summary of why this food is not recommended, built
+  /// from every reason the recommender found. Cached in state so toggling
+  /// the swap checkbox doesn't re-call the summariser.
+  Future<String> _summaryLine(FoodRecommendation r) {
+    if (_cachedSummary != null) return _cachedSummary!;
+    final full = [
+      if (r.hasGeneralInfo) r.generalInfo!,
+      if (r.clashingConditions.isNotEmpty || r.clashingPrefs.isNotEmpty)
+        _personalizedRationale(r),
+      if (r.excessNutrients.isNotEmpty)
+        'This food is high in '
+        '${r.excessNutrients.map((n) => n.label.toLowerCase()).join(' and ')}, '
+        'which the recent diet is already over the daily limit for.',
+    ].join(' ');
+    _cachedSummary = widget.summary.summarize(
+      full.isEmpty ? 'This food is not recommended.' : full,
+    );
+    return _cachedSummary!;
+  }
+
+  Future<String>? _cachedSummary;
+
   /// Short reason chips for why [r]'s food is not recommended.
   List<String> _reasons(FoodRecommendation r) => [
     if (r.hasNews) 'Active food news',
@@ -611,7 +661,6 @@ class _RecommendationCardState extends State<_RecommendationCard> {
   ];
 
   String _personalizedRationale(FoodRecommendation r) {
-    final info = r.generalInfo?.trim();
     final conditions = r.clashingConditions.map((c) => c.label).toList();
     final prefs = r.clashingPrefs.map((p) => p.label.toLowerCase()).toList();
     final personal = [
@@ -622,15 +671,7 @@ class _RecommendationCardState extends State<_RecommendationCard> {
       ),
       ...prefs.map((preference) => 'you follow a $preference diet'),
     ];
-    final context = personal.isEmpty
-        ? ''
-        : ' This matters because ${personal.join(' and ')}.';
-    if (info == null || info.isEmpty) {
-      return personal.isEmpty
-          ? ''
-          : 'This is not recommended for you because ${personal.join(' and ')}.';
-    }
-    return 'This is not recommended for you. $info$context';
+    return 'Not recommended because ${personal.join(' and ')}.';
   }
 
   String _conditionPhrase(String label) => switch (label) {
