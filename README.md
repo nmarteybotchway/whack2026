@@ -36,8 +36,9 @@ condition and don't want to read every label.
   Central and are cached in Firestore. Average daily intake is compared
   with UK adult reference values (sodium is treated as a limit). The
   tracker opens from the History tab.
-- **Nutrient garden.** The home screen is a full-screen sunrise river valley
-  that grows lusher as your recent diet meets the same vitamin and mineral targets as the
+- **Nutrient garden.** The home screen is a full-screen animated river
+  valley, with a day/night cycle and seasons that turn every few days, that
+  grows lusher as your recent diet meets the same vitamin and mineral targets as the
   tracker, and shrink when you go over the sodium limit. With no diet data
   yet, a hint suggests scanning a receipt.
 - **Shopping assistant.** A chat tab that runs on OpenRouter with tool
