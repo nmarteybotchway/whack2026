@@ -88,15 +88,25 @@ class DelayedSettingsData extends FakeData {
 
 class FakeTts extends TextToSpeechService {
   int speaks = 0;
+  Completer<void>? rateConfiguration;
+  Completer<void>? rateStarted;
+  Completer<void>? stopGate;
   @override
   Future<void> speak(String text, {String? locale}) async {
     speaks++;
   }
 
   @override
-  Future<void> stop() async {}
+  Future<void> stop() async {
+    await stopGate?.future;
+  }
+
   @override
-  Future<void> setSpeechRate(double rate) async {}
+  Future<void> setSpeechRate(double rate) async {
+    rateStarted?.complete();
+    await rateConfiguration?.future;
+  }
+
   @override
   Future<void> setVoice(String name, String locale) async {}
   @override
@@ -571,11 +581,156 @@ void main() {
       );
       final starting = c.startListening((_) {});
       await Future<void>.delayed(Duration.zero);
+      expect(c.requestingMicrophonePermission, isTrue);
       await c.suspend();
       permission.complete(true);
       await starting;
+      expect(c.requestingMicrophonePermission, isFalse);
       expect(speech.listens, 0);
       expect(c.listening, isFalse);
+      c.dispose();
+      ai.close();
+    },
+  );
+
+  test(
+    'a new microphone turn cancels automatic announcement audio setup',
+    () async {
+      final speech = FakeSpeech();
+      final tts = FakeTts()
+        ..rateConfiguration = Completer<void>()
+        ..rateStarted = Completer<void>();
+      final c = AssistantController(data: FakeData(), speech: speech, tts: tts);
+      final autoSpeech = c.speakAnnouncement(
+        'Product summary',
+        isCurrent: () => true,
+      );
+      await tts.rateStarted!.future;
+      await c.startListening((_) {});
+      tts.rateConfiguration!.complete();
+      await autoSpeech;
+      expect(speech.listens, 1);
+      expect(tts.speaks, 0);
+      c.dispose();
+    },
+  );
+
+  test('cancel turn after history trimming removes only its complete current group', () async {
+    final pending = Completer<http.Response>();
+    var calls = 0;
+    final ai = OpenRouterService(
+      apiKey: 'test',
+      client: MockClient((request) async {
+        calls++;
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        if (calls <= 11) {
+          return _json({
+            'choices': [
+              {
+                'message': {'role': 'assistant', 'content': 'Done $calls.'},
+              },
+            ],
+          });
+        }
+        if (calls == 12) return pending.future;
+        final history = body['messages'] as List;
+        expect(
+          history.any(
+            (m) =>
+                m is Map && m['role'] == 'user' && m['content'] == 'unfinished',
+          ),
+          isFalse,
+        );
+        return _json({
+          'choices': [
+            {
+              'message': {'role': 'assistant', 'content': 'After cancel.'},
+            },
+          ],
+        });
+      }),
+    );
+    final c = AssistantController(data: FakeData(), ai: ai);
+    for (var i = 0; i < 11; i++) {
+      await c.send('turn $i');
+    }
+    final turn = c.send('unfinished');
+    await Future<void>.delayed(Duration.zero);
+    await c.cancelTurn();
+    pending.complete(
+      _json({
+        'choices': [
+          {
+            'message': {'role': 'assistant', 'content': 'unused'},
+          },
+        ],
+      }),
+    );
+    await turn;
+    await c.send('continue');
+    expect(
+      c.messages.any((m) => m.role == 'user' && m.text == 'unfinished'),
+      isFalse,
+    );
+    expect(c.messages.last.text, 'After cancel.');
+    c.dispose();
+    ai.close();
+  });
+
+  test(
+    'cancel before the new user message is appended preserves prior history',
+    () async {
+      final tts = FakeTts();
+      final ai = OpenRouterService(
+        apiKey: 'test',
+        client: MockClient((request) async {
+          final body = jsonDecode(request.body) as Map<String, dynamic>;
+          final history = body['messages'] as List;
+          if (history.any(
+            (item) =>
+                item is Map &&
+                item['role'] == 'user' &&
+                item['content'] == 'next',
+          )) {
+            expect(
+              history.any(
+                (item) =>
+                    item is Map &&
+                    item['role'] == 'user' &&
+                    item['content'] == 'previous',
+              ),
+              isTrue,
+            );
+          }
+          return _json({
+            'choices': [
+              {
+                'message': {'role': 'assistant', 'content': 'Reply.'},
+              },
+            ],
+          });
+        }),
+      );
+      final c = AssistantController(data: FakeData(), ai: ai, tts: tts);
+      await c.send('previous');
+      tts.stopGate = Completer<void>();
+      final cancelledSend = c.send('cancel before append');
+      await Future<void>.delayed(Duration.zero);
+      final cancelling = c.cancelTurn();
+      tts.stopGate!.complete();
+      await Future.wait([cancelledSend, cancelling]);
+      expect(
+        c.messages.any((m) => m.role == 'user' && m.text == 'previous'),
+        isTrue,
+      );
+      expect(
+        c.messages.any(
+          (m) => m.role == 'user' && m.text == 'cancel before append',
+        ),
+        isFalse,
+      );
+      tts.stopGate = null;
+      await c.send('next');
       c.dispose();
       ai.close();
     },
