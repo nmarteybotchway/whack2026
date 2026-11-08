@@ -237,6 +237,7 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
             ? null
             : FoodRecommendationService(),
         userId: widget.userId,
+        assistant: widget.assistant,
       );
       // The user picked a home-page tab from the result sheet's navigation
       // bar: pop back home and land on it.
