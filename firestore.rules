@@ -197,8 +197,9 @@ service cloud.firestore {
       allow create, update: if owner(uid)
         && request.resource.data.keys().hasAll(['date', 'foods', 'updatedAt'])
         && request.resource.data.keys().hasOnly(
-          ['date', 'foods', 'updatedAt', 'nutrition'])
+          ['date', 'foods', 'updatedAt', 'nutrition', 'items'])
         && request.resource.data.date is timestamp
+        && (!('items' in request.resource.data) || request.resource.data.items is map)
         && request.resource.data.updatedAt == request.time
         && request.resource.data.foods is list
         && request.resource.data.foods.size() <= 500

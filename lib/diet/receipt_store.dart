@@ -6,11 +6,12 @@ import 'receipt_parser.dart';
 
 /// Stores the user's diet in Firestore, organised by date.
 ///
-/// Each day is one document at `users/{uid}/diet/{yyyy-MM-dd}` holding only
-/// the food names from that day's receipts — prices and quantities are not
-/// kept. Scanning another receipt for the same day appends to that day's
-/// foods. Alongside the foods, the day accumulates the aggregated vitamins
-/// and minerals of everything bought, looked up via [NutritionService].
+/// Each day is one document at `users/{uid}/diet/{yyyy-MM-dd}` holding the
+/// food names from that day's receipts, plus the quantity bought and amount
+/// spent per food. Scanning another receipt for the same day appends to that
+/// day's foods and adds to its quantities. Alongside the foods, the day
+/// accumulates the aggregated vitamins and minerals of everything bought,
+/// looked up via [NutritionService].
 class ReceiptStore {
   ReceiptStore(this.userId, {NutritionService? nutrition})
     : nutrition = nutrition ?? NutritionService();
@@ -51,34 +52,54 @@ class ReceiptStore {
     final names = items.map((item) => item.name).toList();
     final totals = await nutrition.totalsFor(names);
     await _diet.doc(dateId).set(
-      dayWrite(names, totals, day),
+      dayWrite(items, totals, day),
       SetOptions(merge: true),
     );
   }
 
   /// The merge write [save] sends for one receipt on [day].
   ///
-  /// Each nutrient is incremented server-side so earlier receipts for the
-  /// same day keep their totals. The `nutrition` key is omitted when there
-  /// is nothing to add, because merging an empty map would replace the
-  /// day's existing nutrition with `{}`.
+  /// Each nutrient, quantity, and spend is incremented server-side so
+  /// earlier receipts for the same day keep their totals. The `nutrition`
+  /// key is omitted when there is nothing to add, because merging an empty
+  /// map would replace the day's existing nutrition with `{}`.
   @visibleForTesting
   static Map<String, Object> dayWrite(
-    List<String> names,
+    List<ReceiptItem> items,
     Map<String, double> totals,
     DateTime day,
-  ) => {
-    'date': Timestamp.fromDate(DateTime(day.year, day.month, day.day)),
-    'foods': FieldValue.arrayUnion(names),
-    if (totals.isNotEmpty)
-      'nutrition': {
-        for (final entry in totals.entries)
-          entry.key: FieldValue.increment(
-            double.parse(entry.value.toStringAsFixed(2)),
-          ),
-      },
-    'updatedAt': FieldValue.serverTimestamp(),
-  };
+  ) {
+    // The same food can appear on several receipt lines; merge them first
+    // so each name gets one increment.
+    final quantities = <String, int>{};
+    final spent = <String, double>{};
+    for (final item in items) {
+      quantities[item.name] = (quantities[item.name] ?? 0) + item.quantity;
+      spent[item.name] = (spent[item.name] ?? 0) + item.lineTotal;
+    }
+    return {
+      'date': Timestamp.fromDate(DateTime(day.year, day.month, day.day)),
+      'foods': FieldValue.arrayUnion(quantities.keys.toList()),
+      if (quantities.isNotEmpty)
+        'items': {
+          for (final name in quantities.keys)
+            name: {
+              'quantity': FieldValue.increment(quantities[name]!),
+              'spent': FieldValue.increment(
+                double.parse(spent[name]!.toStringAsFixed(2)),
+              ),
+            },
+        },
+      if (totals.isNotEmpty)
+        'nutrition': {
+          for (final entry in totals.entries)
+            entry.key: FieldValue.increment(
+              double.parse(entry.value.toStringAsFixed(2)),
+            ),
+        },
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+  }
 
   /// Nutrient totals per day since [start] for foods logged through the
   /// assistant (eaten or purchased), looked up individually. Receipt days
