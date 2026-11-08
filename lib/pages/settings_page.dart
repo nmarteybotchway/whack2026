@@ -144,8 +144,15 @@ class _SettingsPageState extends State<SettingsPage> {
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }
+    // The home scaffold extends the body behind the bottom bar, so pad the
+    // list by the bar's height to keep the last card reachable.
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        16,
+        16,
+        16 + MediaQuery.paddingOf(context).bottom,
+      ),
       children: [
         Text('Preferences', style: theme.textTheme.headlineSmall),
         const SizedBox(height: 4),

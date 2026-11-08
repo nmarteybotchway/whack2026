@@ -89,8 +89,15 @@ class _DietHistoryPageState extends State<DietHistoryPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final diet = _diet;
+    // The home scaffold extends the body behind the bottom bar, so pad the
+    // list by the bar's height to keep the last card reachable.
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        16,
+        16,
+        16 + MediaQuery.paddingOf(context).bottom,
+      ),
       children: [
         Text('Diet history', style: theme.textTheme.headlineSmall),
         const SizedBox(height: 4),
