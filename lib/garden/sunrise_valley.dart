@@ -563,6 +563,7 @@ class _ValleyPainter extends CustomPainter {
     _paintPlane(canvas, size);
     _paintClouds(canvas, size);
     _paintBirds(canvas, size);
+    _paintBalloon(canvas, size);
 
     // The land is painted in layers lit by one color filter, so day, dusk
     // and night reach every ridge, field and tree alike.
@@ -585,6 +586,7 @@ class _ValleyPainter extends CustomPainter {
     _paintForegroundGrass(canvas, size);
     canvas.restore();
 
+    _paintTractorLight(canvas, size);
     _paintWeather(canvas, size);
     _paintRays(canvas, size);
     _paintVignette(canvas, size);
@@ -1365,14 +1367,21 @@ class _ValleyPainter extends CustomPainter {
     trees.sort((a, b) => a.depth.compareTo(b.depth));
 
     final lush = 0.35 + 0.65 * progress; // canopy fullness
+    // The tractor drives among the trees, so it is painted in depth order.
+    var tractorDone = false;
     for (var i = 0; i < trees.length; i++) {
       final t = trees[i];
+      if (!tractorDone && t.depth > _tractorDepth) {
+        _paintTractor(canvas, size);
+        tractorDone = true;
+      }
       // Skip some saplings at low progress; trees grow with progress.
       if (rnd.nextDouble() > (0.25 + 0.75 * progress) * _countGate(t.depth)) {
         continue;
       }
       _paintTree(canvas, size, t, diag, lush, rnd, i);
     }
+    if (!tractorDone) _paintTractor(canvas, size);
   }
 
   /// Depth-based density gate so far rows feel like woodland, near rows like
@@ -1620,6 +1629,136 @@ class _ValleyPainter extends CustomPainter {
     canvas.restore();
   }
 
+  // -- Hot air balloon: drifts far off, day or night -------------------------
+
+  void _paintBalloon(Canvas canvas, Size size) {
+    const period = 120.0;
+    const flight = 80.0;
+    final cycle = (_time / period).floor();
+    final phase = _time - cycle * period;
+    if (phase > flight) return;
+    final u = phase / flight;
+    final ltr = _hash(cycle + 8000) > 0.5;
+    final r = size.width * 0.026;
+    final x = size.width * (ltr ? -0.08 + 1.16 * u : 1.08 - 1.16 * u);
+    final y =
+        size.height * (0.3 - 0.05 * u + 0.006 * math.sin(_time * 0.6 + cycle));
+
+    // Muted panels, hazed toward the sky and lit like the land, so it sits
+    // in the air rather than on top of the scene.
+    final air = _light.sky[1];
+    Color tone(Color c) => _modulate(Color.lerp(c, air, 0.3)!, _light.landTint);
+    const panel = Color(0xFFD9826B);
+    const seam = Color(0xFFF2DCC0);
+
+    canvas.save();
+    canvas.translate(x, y);
+    canvas.rotate(0.03 * math.sin(_time * 0.5 + cycle));
+
+    final envelope = Path()
+      ..moveTo(-r * 0.28, r * 1.1)
+      ..cubicTo(-r * 1.2, r * 0.3, -r * 1.05, -r, 0, -r)
+      ..cubicTo(r * 1.05, -r, r * 1.2, r * 0.3, r * 0.28, r * 1.1)
+      ..close();
+    canvas.drawPath(envelope, Paint()..color = tone(panel));
+    // Curved gores: lens-shaped panels pinched together at the crown and
+    // the mouth (clipped to the envelope below).
+    Path gore(double bulge) => Path()
+      ..moveTo(0, -r)
+      ..quadraticBezierTo(-r * bulge * 1.6, -r * 0.1, -r * 0.1, r * 1.1)
+      ..lineTo(r * 0.1, r * 1.1)
+      ..quadraticBezierTo(r * bulge * 1.6, -r * 0.1, 0, -r)
+      ..close();
+    canvas.save();
+    canvas.clipPath(envelope);
+    canvas.drawPath(gore(0.34), Paint()..color = tone(seam));
+    canvas.drawPath(gore(0.12), Paint()..color = tone(panel));
+    // Flat shading like the canopies: lighter toward the sun.
+    final sunward = _light.sun.dx >= x ? 1.0 : -1.0;
+    canvas.drawRect(
+      Rect.fromLTRB(
+        sunward > 0 ? r * 0.15 : -r * 1.3,
+        -r * 1.1,
+        sunward > 0 ? r * 1.3 : -r * 0.15,
+        r * 1.2,
+      ),
+      Paint()..color = Colors.white.withValues(alpha: 0.12),
+    );
+    canvas.drawRect(
+      Rect.fromLTRB(
+        sunward > 0 ? -r * 1.3 : r * 0.45,
+        -r * 1.1,
+        sunward > 0 ? -r * 0.45 : r * 1.3,
+        r * 1.2,
+      ),
+      Paint()..color = Colors.black.withValues(alpha: 0.08),
+    );
+    // After dark the burner fires every few seconds and lights the
+    // envelope from inside, painted unlit so it glows over the valley.
+    final night = _light.night;
+    final burn = _fract(_time / 3.5 + cycle * 0.37);
+    final flare = burn < 0.3 ? math.sin(math.pi * burn / 0.3) : 0.0;
+    final glow = night * (0.3 + 0.55 * flare);
+    if (glow > 0.01) {
+      canvas.drawRect(
+        Rect.fromLTRB(-r * 1.3, -r * 1.1, r * 1.3, r * 1.2),
+        Paint()
+          ..shader = ui.Gradient.radial(
+            Offset(0, r * 0.6),
+            r * 1.6,
+            [
+              const Color(0xFFFFB45E).withValues(alpha: glow),
+              const Color(0xFFFF8A4A).withValues(alpha: glow * 0.5),
+              const Color(0xFFFF8A4A).withValues(alpha: 0),
+            ],
+            const [0.0, 0.55, 1.0],
+          ),
+      );
+    }
+    canvas.restore();
+
+    if (night * flare > 0.01) {
+      // The burner flame at the mouth.
+      canvas.drawOval(
+        Rect.fromCenter(
+          center: Offset(0, r * 1.18),
+          width: r * 0.16,
+          height: r * 0.34 * flare,
+        ),
+        Paint()
+          ..color = const Color(0xFFFFE08A).withValues(alpha: night * flare),
+      );
+    }
+
+    // Basket hung on short lines, in the trunks' brown.
+    final basket = tone(_Palette.trunkDark);
+    final line = Paint()
+      ..color = basket
+      ..strokeWidth = math.max(0.6, r * 0.04);
+    canvas.drawLine(
+      Offset(-r * 0.26, r * 1.1),
+      Offset(-r * 0.15, r * 1.42),
+      line,
+    );
+    canvas.drawLine(
+      Offset(r * 0.26, r * 1.1),
+      Offset(r * 0.15, r * 1.42),
+      line,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(
+          center: Offset(0, r * 1.52),
+          width: r * 0.34,
+          height: r * 0.22,
+        ),
+        Radius.circular(r * 0.05),
+      ),
+      Paint()..color = basket,
+    );
+    canvas.restore();
+  }
+
   // -- Cable car up the middle ridge -------------------------------------------
 
   void _paintCableCar(
@@ -1749,6 +1888,147 @@ class _ValleyPainter extends CustomPainter {
         Paint()..color = const Color(0xFFDDEEF5),
       );
     }
+  }
+
+  // -- Tractor working the meadow ----------------------------------------------
+
+  /// How far into the valley the tractor works (river depth, 0 = horizon).
+  static const _tractorDepth = 0.13;
+
+  /// Where the tractor is: driving back and forth over the meadow left of
+  /// the river, easing to a stop and turning round at each end.
+  ({Offset ground, double dir, double length}) _tractor(Size size) {
+    final diag = math.min(size.width, size.height);
+    final y =
+        size.height * _meadowTopFrac +
+        size.height * 0.62 * math.pow(_tractorDepth, 1.15).toDouble();
+    final riverEdge =
+        _riverCenterX(_tractorDepth, size.width) -
+        _riverHalfWidth(_tractorDepth, diag) -
+        diag * 0.08;
+    final from = size.width * 0.06;
+    final to = math.max(from + size.width * 0.1, riverEdge);
+    final f = _fract(_time / 60) * 2;
+    final along = _smoothstep(0, 1, f < 1 ? f : 2 - f);
+    // Sized like a tree at the same depth.
+    final scale =
+        diag * (0.020 + 0.105 * math.pow(_tractorDepth, 1.4).toDouble());
+    return (
+      ground: Offset(from + (to - from) * along, y),
+      dir: f < 1 ? 1.0 : -1.0,
+      length: scale * 2.3,
+    );
+  }
+
+  void _paintTractor(Canvas canvas, Size size) {
+    final (:ground, :dir, :length) = _tractor(size);
+    final l = length;
+    // Hazed toward the distance like the trees around it.
+    final haze = 0.45 * (1 - _tractorDepth);
+    final body = Color.lerp(const Color(0xFFB0583F), _Palette.warmHaze, haze)!;
+    final dark = Color.lerp(const Color(0xFF3A3340), _Palette.warmHaze, haze)!;
+
+    canvas.save();
+    canvas.translate(ground.dx, ground.dy);
+    canvas.scale(dir, 1);
+
+    // A faint, misty puff trail from the stack.
+    final mist = Color.lerp(_Palette.mistGolden, _Palette.mistDay, _light.day)!;
+    final puff = Paint();
+    for (var i = 0; i < 3; i++) {
+      final age = _fract(_time * 0.6 + i / 3);
+      puff.color = mist.withValues(alpha: 0.45 * (1 - age));
+      canvas.drawCircle(
+        Offset(l * 0.18 - age * l * 0.4, -l * 0.62 - age * l * 0.35),
+        l * (0.06 + 0.08 * age),
+        puff,
+      );
+    }
+
+    // One flat silhouette: low hood in front, cab behind, stack on top.
+    final shape = Path()
+      ..moveTo(-l * 0.42, -l * 0.18)
+      ..lineTo(-l * 0.42, -l * 0.74)
+      ..lineTo(-l * 0.06, -l * 0.74)
+      ..lineTo(-l * 0.06, -l * 0.42)
+      ..lineTo(l * 0.4, -l * 0.42)
+      ..quadraticBezierTo(l * 0.46, -l * 0.42, l * 0.46, -l * 0.34)
+      ..lineTo(l * 0.46, -l * 0.18)
+      ..close()
+      ..addRect(Rect.fromLTRB(l * 0.15, -l * 0.6, l * 0.2, -l * 0.42));
+    canvas.drawPath(shape, Paint()..color = body);
+    // Flat light on the sunward side of the cab, as on the canopies.
+    final sunward = (_light.sun.dx >= ground.dx) == (dir > 0);
+    canvas.drawRect(
+      sunward
+          ? Rect.fromLTRB(-l * 0.18, -l * 0.74, -l * 0.06, -l * 0.42)
+          : Rect.fromLTRB(-l * 0.42, -l * 0.74, -l * 0.3, -l * 0.42),
+      Paint()..color = Colors.white.withValues(alpha: 0.14),
+    );
+
+    // Plain dark wheels: big at the back, small at the front.
+    final wheel = Paint()..color = dark;
+    canvas.drawCircle(Offset(-l * 0.22, -l * 0.22), l * 0.22, wheel);
+    canvas.drawCircle(Offset(l * 0.3, -l * 0.13), l * 0.13, wheel);
+    canvas.restore();
+  }
+
+  /// The tractor's headlight after dark, painted unlit: a soft cone
+  /// reaching forward and down, and a pool of light on the meadow ahead.
+  void _paintTractorLight(Canvas canvas, Size size) {
+    final glow = (_light.night + 0.4 * (1 - _light.sunUp)).clamp(0.0, 1.0);
+    if (glow <= 0.05) return;
+    final (:ground, :dir, :length) = _tractor(size);
+    final lamp = ground.translate(dir * length * 0.46, -length * 0.34);
+    final reach = length * 2.6;
+    const light = Color(0xFFFFE7A3);
+
+    // Pool on the ground where the beam lands.
+    final pool = ground.translate(dir * reach * 0.75, 0);
+    canvas.save();
+    canvas.translate(pool.dx, pool.dy);
+    canvas.scale(1, 0.28);
+    canvas.drawCircle(
+      Offset.zero,
+      reach * 0.45,
+      Paint()
+        ..shader = ui.Gradient.radial(Offset.zero, reach * 0.45, [
+          light.withValues(alpha: 0.28 * glow),
+          light.withValues(alpha: 0),
+        ]),
+    );
+    canvas.restore();
+
+    // The beam: a cone angled slightly down, fading with distance and
+    // softened at its edges.
+    final beam = Path()
+      ..moveTo(lamp.dx, lamp.dy - length * 0.04)
+      ..lineTo(lamp.dx + dir * reach, lamp.dy - length * 0.2)
+      ..lineTo(lamp.dx + dir * reach, lamp.dy + length * 0.5)
+      ..lineTo(lamp.dx, lamp.dy + length * 0.04)
+      ..close();
+    canvas.drawPath(
+      beam,
+      Paint()
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, length * 0.12)
+        ..shader = ui.Gradient.radial(
+          lamp,
+          reach,
+          [
+            light.withValues(alpha: 0.5 * glow),
+            light.withValues(alpha: 0.18 * glow),
+            light.withValues(alpha: 0),
+          ],
+          const [0.0, 0.5, 1.0],
+        ),
+    );
+
+    // The lamp itself.
+    canvas.drawCircle(
+      lamp,
+      length * 0.06,
+      Paint()..color = const Color(0xFFFFF4CC).withValues(alpha: glow),
+    );
   }
 
   // -- Seasonal weather: petals, leaves, snow -----------------------------------
