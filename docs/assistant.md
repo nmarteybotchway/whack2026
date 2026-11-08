@@ -33,9 +33,15 @@ resolved it to `z-ai/glm-5.3-flash` and returned a valid function call.
   General questions work before the first scan.
   Say “show me more” or use **Details** for the original scan sheet or
   the app-bar chat button to open the full shared conversation.
-- Stop session, backgrounding, or an interruption stops camera companion audio
-  and microphone activity. Resume the companion explicitly. Automatic listening
-  runs only during the foreground shopping session.
+- Backgrounding or an interruption pauses camera companion audio and microphone
+  activity without ending the session, clearing its draft, or cancelling its
+  pending answer. Returning resumes an already-active companion without another
+  greeting. Stop session still ends it explicitly. Automatic listening runs only
+  during the foreground shopping session.
+- Visited tabs retain their page state when switching tabs. Conversation messages,
+  typed and shopping drafts, current product context, and the last identified scan
+  are saved locally per user. After an app restart, reopen the scanner to access
+  the last product and explicitly start a new voice session.
 
 The native duplex implementation is retained for future experiments but is not
 used by the current shopping flow. Turn-based mode uses the ordinary device
@@ -123,8 +129,11 @@ food name and source page. A broken/missing image does not prevent a text reply.
 Writes use validated proposals and transactions that save the mutation together
 with an immutable `users/{uid}/assistantActions/{id}` result marker. Profile
 proposals check the original target-field values before committing. Manual
-entries use `users/{uid}/foodEntries/{entryId}`. Conversation history is held in
-memory and cleared when the signed-in session ends.
+entries use `users/{uid}/foodEntries/{entryId}`. Conversation display messages and
+unsent drafts are cached in local preferences under the signed-in user's ID.
+Restoration rebuilds plain conversation context; pending tool calls and unconfirmed
+actions are not replayed after a process restart. Clear conversation also clears
+the saved conversation and drafts. Cached sessions are local to this installation.
 
 ## Setup and verification
 

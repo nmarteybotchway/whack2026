@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:hackathon/assistant/assistant_controller.dart';
 import 'package:hackathon/assistant/assistant_models.dart';
 import 'package:hackathon/openrouter/openrouter_service.dart';
@@ -14,6 +15,67 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  test(
+    'background interruption retains draft, product and active session',
+    () async {
+      final assistant = _assistant();
+      final companion = ShoppingCompanionController(
+        assistant: assistant,
+        briefingLoader: (p) async => _brief(p),
+      );
+      await companion.start();
+      await companion.updateProduct(_product('Oats', '001'));
+      companion.setDraft('Is this suitable');
+      final messageCount = assistant.messages.length;
+      await companion.suspendForBackground();
+      expect(companion.active, isTrue);
+      expect(companion.draft, 'Is this suitable');
+      expect(companion.briefing, isNotNull);
+      expect(assistant.messages.length, messageCount);
+      expect(assistant.listening, isFalse);
+      await companion.resumeFromBackground();
+      expect(companion.draft, 'Is this suitable');
+      expect(companion.active, isTrue);
+      await _dispose(companion, assistant);
+    },
+  );
+
+  test(
+    'conversation and draft recover after recreation and stay user scoped',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final first = _assistant(sessionKey: 'alice');
+      await first.initialize();
+      first.setInputDraft('unfinished question');
+      first.setShoppingDraft('unfinished spoken question');
+      await first.send('What should I eat?');
+      await first.saveSession();
+      final texts = first.messages.map((m) => m.text).toList();
+      first.dispose();
+      final restored = _assistant(sessionKey: 'alice');
+      await restored.initialize();
+      expect(restored.messages.map((m) => m.text), texts);
+      expect(restored.inputDraft, 'unfinished question');
+      expect(restored.shoppingDraft, 'unfinished spoken question');
+      expect(restored.pendingAction, isNull);
+      final other = _assistant(sessionKey: 'bob');
+      await other.initialize();
+      expect(other.messages, isEmpty);
+      expect(other.inputDraft, isEmpty);
+      await restored.clear();
+      await restored.saveSession();
+      final cleared = _assistant(sessionKey: 'alice');
+      await cleared.initialize();
+      expect(cleared.messages, isEmpty);
+      expect(cleared.inputDraft, isEmpty);
+      restored.dispose();
+      other.dispose();
+      cleared.dispose();
+    },
+  );
+
   test(
     'cached scan waits for saved voice settings after opening camera',
     () async {
@@ -167,6 +229,58 @@ void main() {
     },
   );
 
+  test(
+    'backgrounding during a reply keeps the turn without background speech',
+    () async {
+      final summary = Completer<Map<String, Object?>>();
+      final tts = _Tts();
+      final assistant = _assistant(
+        tts: tts,
+        data: _Data(summaryLoaded: summary),
+      );
+      final companion = ShoppingCompanionController(
+        assistant: assistant,
+        briefingLoader: (p) async => _brief(p),
+      );
+      await companion.start();
+      final submission = companion.submit('What should I eat?');
+      await _flush();
+      expect(assistant.busy, isTrue);
+      await companion.suspendForBackground();
+      expect(assistant.busy, isTrue);
+      summary.complete({});
+      await submission;
+      expect(
+        assistant.messages.map((m) => m.text),
+        containsAll(['What should I eat?', 'A grounded answer.']),
+      );
+      expect(
+        tts.spoken,
+        hasLength(1),
+        reason: 'only the initial greeting should play',
+      );
+      await companion.resumeFromBackground();
+      expect(
+        tts.spoken,
+        hasLength(1),
+        reason: 'resuming must not repeat the greeting',
+      );
+      await _dispose(companion, assistant);
+    },
+  );
+
+  test('scan snapshot preserves product details', () {
+    final original = _product('Oats', '001');
+    final restored = ProductIdentification.fromJson(
+      jsonDecode(jsonEncode(original.toJson())) as Map<String, dynamic>,
+    );
+    expect(restored.displayName, original.displayName);
+    expect(restored.gtin, original.gtin);
+    expect(restored.confidence, original.confidence);
+    expect(restored.productNameConfidence, original.productNameConfidence);
+    expect(restored.evidence, original.evidence);
+  });
+
   test('general question works before a product is selected', () async {
     final assistant = _assistant();
     final companion = ShoppingCompanionController(
@@ -225,12 +339,14 @@ void main() {
 }
 
 class _Data implements AssistantDataSource {
-  _Data({this.settingsLoaded});
+  _Data({this.settingsLoaded, this.summaryLoaded});
+  final Completer<Map<String, Object?>>? summaryLoaded;
   final Completer<AssistantSettings>? settingsLoaded;
   @override
   List<Map<String, Object?>> get tools => const [];
   @override
-  Future<Map<String, Object?>> summary() async => const {};
+  Future<Map<String, Object?>> summary() async =>
+      summaryLoaded?.future ?? const {};
   @override
   Future<AssistantToolResult> execute(
     String name,
@@ -278,30 +394,32 @@ class _Tts extends TextToSpeechService {
   Future<List<Map<String, String>>> getVoices() async => const [];
 }
 
-AssistantController _assistant({_Tts? tts, _Data? data}) => AssistantController(
-  data: data ?? _Data(),
-  ai: OpenRouterService(
-    apiKey: 'test',
-    client: MockClient(
-      (r) async => http.Response(
-        jsonEncode({
-          'choices': [
-            {
-              'message': {
-                'role': 'assistant',
-                'content': _modelReply(r, 'A grounded answer.'),
-              },
-            },
-          ],
-        }),
-        200,
-        headers: {'content-type': 'application/json'},
+AssistantController _assistant({_Tts? tts, _Data? data, String? sessionKey}) =>
+    AssistantController(
+      sessionKey: sessionKey,
+      data: data ?? _Data(),
+      ai: OpenRouterService(
+        apiKey: 'test',
+        client: MockClient(
+          (r) async => http.Response(
+            jsonEncode({
+              'choices': [
+                {
+                  'message': {
+                    'role': 'assistant',
+                    'content': _modelReply(r, 'A grounded answer.'),
+                  },
+                },
+              ],
+            }),
+            200,
+            headers: {'content-type': 'application/json'},
+          ),
+        ),
       ),
-    ),
-  ),
-  speech: _Speech(),
-  tts: tts ?? _Tts(),
-);
+      speech: _Speech(),
+      tts: tts ?? _Tts(),
+    );
 
 ProductIdentification _product(String name, String gtin) =>
     ProductIdentification(

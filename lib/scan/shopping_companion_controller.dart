@@ -16,7 +16,9 @@ class ShoppingCompanionController extends ChangeNotifier {
     this.onShowDetails,
     DateTime Function()? now,
   }) : _now = now ?? DateTime.now {
+    draft = assistant.shoppingDraft;
     assistant.addListener(_onAssistantChanged);
+    unawaited(_restoreDraft());
   }
 
   final AssistantController assistant;
@@ -46,6 +48,9 @@ class ShoppingCompanionController extends ChangeNotifier {
   Future<void>? _stopping;
   int _productEpoch = 0;
   int _recognition = 0;
+  bool _draftReady = false;
+  bool _backgrounded = false;
+  Future<void>? _backgroundPause;
   bool _ready = false;
   bool _micPaused = false;
   bool _scanPaused = false;
@@ -76,8 +81,19 @@ class ShoppingCompanionController extends ChangeNotifier {
           : null);
   AssistantAction? get pendingAction => assistant.pendingAction;
 
+  Future<void> _restoreDraft() async {
+    await assistant.initialize();
+    if (_disposed) return;
+    if (draft.isEmpty) draft = assistant.shoppingDraft;
+    _draftReady = true;
+    _notify();
+  }
+
   void _notify() {
-    if (!_disposed) notifyListeners();
+    if (!_disposed) {
+      if (_draftReady) assistant.setShoppingDraft(draft);
+      notifyListeners();
+    }
   }
 
   Map<String, Object?> _productMap(ProductIdentification product) => {
@@ -130,7 +146,7 @@ class ShoppingCompanionController extends ChangeNotifier {
       return;
     }
     if (!_isSession(session)) return;
-    assistant.resumeForeground();
+    if (!_backgrounded) assistant.resumeForeground();
     assistant.sessionVoiceEnabled = true;
     assistant.speech.duplexEnabled = false;
     assistant.configureLiveVoice(false);
@@ -146,6 +162,10 @@ class ShoppingCompanionController extends ChangeNotifier {
     _ready = true;
     _greetingPlaying = true;
     _notify();
+    if (_backgrounded) {
+      _greetingPlaying = false;
+      return;
+    }
     // Speak first; the microphone opens after playback finishes. The explicit
     // Interrupt and talk button can stop the greeting and open the microphone.
     try {
@@ -201,6 +221,26 @@ class ShoppingCompanionController extends ChangeNotifier {
   }
 
   Future<void> pause() => stop();
+
+  /// Release hardware without ending the shopping session or rolling back a turn.
+  Future<void> suspendForBackground() {
+    _backgrounded = true;
+    _recognition++;
+    _cancelTimers();
+    return _backgroundPause = assistant.suspend().whenComplete(_notify);
+  }
+
+  Future<void> resumeFromBackground() async {
+    await _backgroundPause;
+    if (_disposed || !_backgrounded) return;
+    _backgrounded = false;
+    assistant.resumeForeground();
+    if (!_backgrounded && _pendingBriefing != null) {
+      unawaited(_announcePending());
+    }
+    _scheduleListening();
+    _notify();
+  }
 
   Future<void> scanning() async {
     _scanPaused = true;
@@ -328,7 +368,8 @@ class ShoppingCompanionController extends ChangeNotifier {
     final pending = _pendingBriefing;
     final product = _product;
     final key = _productKey;
-    if (pending == null ||
+    if (_backgrounded ||
+        pending == null ||
         product == null ||
         key == null ||
         !active ||
@@ -437,7 +478,9 @@ class ShoppingCompanionController extends ChangeNotifier {
       if (error != null) _micPaused = true;
     }
     _notify();
-    if (_pendingBriefing != null) unawaited(_announcePending());
+    if (!_backgrounded && _pendingBriefing != null) {
+      unawaited(_announcePending());
+    }
     if (active &&
         !assistant.listening &&
         !assistant.speaking &&
@@ -550,6 +593,7 @@ class ShoppingCompanionController extends ChangeNotifier {
 
   bool get _canListen =>
       active &&
+      !_backgrounded &&
       _ready &&
       !_micPaused &&
       !_scanPaused &&

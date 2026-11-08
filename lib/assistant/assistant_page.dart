@@ -23,9 +23,17 @@ class _AssistantPageState extends State<AssistantPage> {
   @override
   void initState() {
     super.initState();
-    widget.controller.initialize();
+    _input.text = widget.controller.inputDraft;
+    _input.addListener(_saveDraft);
+    widget.controller.initialize().then((_) {
+      if (mounted && _input.text.isEmpty) {
+        _input.text = widget.controller.inputDraft;
+      }
+    });
     widget.controller.addListener(_changed);
   }
+
+  void _saveDraft() => widget.controller.setInputDraft(_input.text);
 
   void _changed() {
     if (!mounted) return;
@@ -49,6 +57,7 @@ class _AssistantPageState extends State<AssistantPage> {
   void dispose() {
     widget.controller.removeListener(_changed);
     widget.controller.suspend();
+    _input.removeListener(_saveDraft);
     _input.dispose();
     _scroll.dispose();
     super.dispose();

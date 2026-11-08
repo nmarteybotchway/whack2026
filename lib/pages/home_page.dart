@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
@@ -43,6 +45,7 @@ const _tabs = [..._leftTabs, ..._rightTabs];
 
 class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   int _index = 0;
+  final Set<int> _visitedTabs = {0};
 
   /// Receipt scans finished this session; keys the home tab so its nutrient
   /// cards reload with the new data.
@@ -55,6 +58,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _assistant = AssistantController(
+      sessionKey: widget.user.uid,
       data: FirestoreAssistantRepository(
         userId: widget.user.uid,
         profile: {
@@ -73,6 +77,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         },
       ),
     );
+    unawaited(_assistant.initialize());
     _tracking = HealthTrackingController(widget.user.uid);
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _tracking.initialize();
@@ -103,6 +108,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         state == AppLifecycleState.hidden ||
         state == AppLifecycleState.detached) {
       _assistant.suspend();
+    } else if (state == AppLifecycleState.resumed) {
+      _assistant.resumeForeground();
     }
   }
 
@@ -110,7 +117,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (_index == index) return;
     if (_index == 2) _assistant.suspend();
     if (index == 2) _assistant.initialize();
-    setState(() => _index = index);
+    setState(() {
+      _index = index;
+      _visitedTabs.add(index);
+    });
   }
 
   Future<void> _scan() async {
@@ -126,7 +136,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // Returning a tab index means the user tapped a tab on the scan-result
     // sheet's navigation bar; land them on it. Otherwise treat it as a scan.
     if (tab != null) {
-      setState(() => _index = tab);
+      setState(() {
+        _index = tab;
+        _visitedTabs.add(tab);
+      });
       return;
     }
     setState(() => _scans++);
@@ -140,22 +153,33 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       extendBody: true,
       extendBodyBehindAppBar: _index == 0,
       appBar: _index == 0 ? null : AppBar(title: Text(_tabs[_index].label)),
-      body: switch (_index) {
-        // Keyed by scan count so the nutrient cards reload after a scan.
-        0 => _HomeTab(key: ValueKey(_scans), user: widget.user),
-        1 => DietHistoryPage(
-          key: ValueKey(widget.user.uid),
-          userId: widget.user.uid,
-        ),
-        2 => AssistantPage(controller: _assistant),
-        3 => SettingsPage(
-          key: ValueKey(widget.user.uid),
-          user: widget.user,
-          tracking: _tracking,
-          assistant: _assistant,
-        ),
-        _ => const SizedBox.shrink(),
-      },
+      body: IndexedStack(
+        index: _index,
+        children: [
+          // Keyed by scan count so the nutrient cards reload after a scan.
+          _HomeTab(key: ValueKey(_scans), user: widget.user),
+          if (_visitedTabs.contains(1))
+            DietHistoryPage(
+              key: ValueKey(widget.user.uid),
+              userId: widget.user.uid,
+            )
+          else
+            const SizedBox.shrink(),
+          if (_visitedTabs.contains(2))
+            AssistantPage(controller: _assistant)
+          else
+            const SizedBox.shrink(),
+          if (_visitedTabs.contains(3))
+            SettingsPage(
+              key: ValueKey(widget.user.uid),
+              user: widget.user,
+              tracking: _tracking,
+              assistant: _assistant,
+            )
+          else
+            const SizedBox.shrink(),
+        ],
+      ),
       bottomNavigationBar: _BottomBar(
         index: _index,
         onSelect: _selectTab,

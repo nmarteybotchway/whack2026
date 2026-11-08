@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:camera/camera.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
@@ -10,6 +12,7 @@ import '../food/food_recommendation_service.dart';
 import '../food_news.dart';
 import 'analysis_result_sheet.dart';
 import 'camera_analysis.dart';
+import 'product_identification_service.dart';
 import 'shopping_companion_briefing.dart';
 import 'shopping_companion_controller.dart';
 import 'shopping_companion_overlay.dart';
@@ -75,7 +78,45 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
         onShowDetails: _showDetails,
       )..addListener(_onCompanionChanged);
     }
+    unawaited(_restoreScan());
     if (ScanPage.isSupported) _startCamera();
+  }
+
+  Future<void> _restoreScan() async {
+    if (widget.userId == null) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('scan.last.${widget.userId}');
+      if (!mounted || raw == null || _lastResult != null || _analysing) return;
+      final saved = jsonDecode(raw) as Map<String, dynamic>;
+      final product = ProductIdentification.fromJson(
+        saved['product'] as Map<String, dynamic>,
+      );
+      setState(() {
+        _lastResult = AnalysisResult(identification: product);
+        _lastScanAt = DateTime.tryParse(saved['scannedAt'] as String);
+      });
+      if (_companion?.active ?? false) {
+        unawaited(_companion!.updateProduct(product, scannedAt: _lastScanAt));
+      }
+    } catch (_) {
+      // An invalid snapshot should never prevent opening the camera.
+    }
+  }
+
+  Future<void> _saveScan() async {
+    final product = _lastResult?.identification;
+    if (widget.userId == null || product == null) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        'scan.last.${widget.userId}',
+        jsonEncode({
+          'product': product.toJson(),
+          'scannedAt': _lastScanAt?.toIso8601String(),
+        }),
+      );
+    } catch (_) {}
   }
 
   @override
@@ -100,8 +141,11 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
         state == AppLifecycleState.hidden ||
         state == AppLifecycleState.detached) {
       _foregroundEpoch++;
-      _companion?.pause();
+      _companion?.suspendForBackground();
       widget.assistant?.suspend();
+    }
+    if (state == AppLifecycleState.resumed) {
+      _companion?.resumeFromBackground();
     }
     // The camera must be released when the app goes to the background. Skip
     // this while the camera is still starting: the permission dialog also
@@ -209,19 +253,19 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
     _analysing = true;
     final scannedAt = DateTime.now().toUtc();
     setState(() {});
-    if (!fromAssistant) await _companion?.scanning();
-    if (!mounted || _controller != controller) {
-      _analysing = false;
-      return {'available': false, 'error': 'Camera is no longer available.'};
-    }
-    if (!fromAssistant) {
-      widget.assistant?.setCurrentProduct({
-        'status': 'scanning',
-        'scannedAt': DateTime.now().toUtc().toIso8601String(),
-      });
-    }
     AnalysisResult result;
     try {
+      if (!fromAssistant) await _companion?.scanning();
+      if (!mounted || _controller != controller) {
+        _analysing = false;
+        return {'available': false, 'error': 'Camera is no longer available.'};
+      }
+      if (!fromAssistant) {
+        widget.assistant?.setCurrentProduct({
+          'status': 'scanning',
+          'scannedAt': DateTime.now().toUtc().toIso8601String(),
+        });
+      }
       final photo = await controller.takePicture();
       result = await analysis.analyse(await photo.readAsBytes());
     } catch (error) {
@@ -234,9 +278,10 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
       if (mounted) setState(() {});
     }
 
-    if (mounted && _controller == controller) {
+    if (mounted) {
       _lastResult = result;
       _lastScanAt = scannedAt;
+      unawaited(_saveScan());
       final product = result.identification;
       if (!fromAssistant) {
         widget.assistant?.setCurrentProduct({
@@ -266,7 +311,8 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
         if (product != null) assessment = await _companion!.assess(product);
       } else if (_companion?.active ?? false) {
         unawaited(_companion!.updateProduct(product, scannedAt: scannedAt));
-      } else if (!fromAssistant) {
+      } else if (!fromAssistant &&
+          WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
         await _showResult(result);
       }
       return {

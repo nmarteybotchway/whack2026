@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../openrouter/openrouter_service.dart';
 import '../services/kokoro_tts_factory.dart';
@@ -13,6 +14,7 @@ import 'assistant_models.dart';
 class AssistantController extends ChangeNotifier {
   AssistantController({
     required this.data,
+    this.sessionKey,
     OpenRouterService? ai,
     SpeechToTextService? speech,
     TextToSpeechService? tts,
@@ -24,6 +26,12 @@ class AssistantController extends ChangeNotifier {
        tts = tts ?? KokoroTtsService();
 
   final AssistantDataSource data;
+  final String? sessionKey;
+  String inputDraft = '';
+  String shoppingDraft = '';
+  Timer? _saveTimer;
+  bool _restored = false;
+  Future<void> _saveQueue = Future.value();
   final OpenRouterService ai;
   final SpeechToTextService speech;
   TextToSpeechService tts;
@@ -63,6 +71,7 @@ class AssistantController extends ChangeNotifier {
   Timer? _spokenTextExpiry;
   int _listeningEpoch = 0;
   bool _suspended = false;
+  Future<void>? _suspending;
   final bool _ownsAi;
   final List<AssistantImage> _turnImages = [];
   Future<Map<String, Object?>> Function()? _cameraPhotoRequester;
@@ -74,7 +83,10 @@ class AssistantController extends ChangeNotifier {
   String? get currentlySpokenText => _currentlySpokenText;
 
   void _notify() {
-    if (!_disposed) notifyListeners();
+    if (!_disposed) {
+      notifyListeners();
+      _scheduleSave();
+    }
   }
 
   bool _valid(int epoch) => !_disposed && epoch == _epoch;
@@ -94,7 +106,108 @@ class AssistantController extends ChangeNotifier {
     _notify();
   }
 
+  void setInputDraft(String value) {
+    inputDraft = value;
+    _scheduleSave();
+  }
+
+  void setShoppingDraft(String value) {
+    if (shoppingDraft == value) return;
+    shoppingDraft = value;
+    _scheduleSave();
+  }
+
+  void _scheduleSave() {
+    if (sessionKey == null || !_restored) return;
+    _saveTimer?.cancel();
+    _saveTimer = Timer(const Duration(milliseconds: 300), () {
+      unawaited(saveSession());
+    });
+  }
+
+  /// Save display messages only: an interrupted tool call must never be
+  /// replayed as an action after a process restart.
+  Future<void> saveSession() {
+    if (sessionKey == null || !_restored) return Future.value();
+    _saveTimer?.cancel();
+    final snapshot = jsonEncode({
+      'draft': inputDraft,
+      'shoppingDraft': shoppingDraft,
+      'product': _currentProduct,
+      'messages': messages
+          .map(
+            (m) => {
+              'role': m.role,
+              'text': m.text,
+              'images': m.images
+                  .map(
+                    (i) => {
+                      'foodId': i.foodId,
+                      'name': i.name,
+                      'url': i.url,
+                      'sourcePage': i.sourcePage,
+                    },
+                  )
+                  .toList(),
+            },
+          )
+          .toList(),
+    });
+    _saveQueue = _saveQueue.then((_) async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('assistant.session.$sessionKey', snapshot);
+      } catch (_) {
+        // Storage failure must not interrupt the live conversation.
+      }
+    });
+    return _saveQueue;
+  }
+
+  Future<void> _restoreSession() async {
+    try {
+      if (sessionKey == null) return;
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('assistant.session.$sessionKey');
+      if (raw == null || _disposed || messages.isNotEmpty) return;
+      final saved = jsonDecode(raw) as Map<String, dynamic>;
+      final restored = (saved['messages'] as List).map((value) {
+        final m = value as Map<String, dynamic>;
+        return AssistantMessage(
+          role: m['role'] as String,
+          text: m['text'] as String,
+          images: ((m['images'] as List?) ?? []).map((value) {
+            final i = value as Map<String, dynamic>;
+            return AssistantImage(
+              foodId: i['foodId'] as String,
+              name: i['name'] as String,
+              url: i['url'] as String,
+              sourcePage: i['sourcePage'] as String,
+            );
+          }).toList(),
+        );
+      }).toList();
+      messages.addAll(restored);
+      // Rebuild plain conversational context, excluding tool protocol state.
+      _history.addAll(
+        restored
+            .where((m) => m.role == 'user' || m.role == 'assistant')
+            .map((m) => <String, dynamic>{'role': m.role, 'content': m.text}),
+      );
+      if (inputDraft.isEmpty) inputDraft = saved['draft'] as String? ?? '';
+      if (shoppingDraft.isEmpty) {
+        shoppingDraft = saved['shoppingDraft'] as String? ?? '';
+      }
+      _currentProduct ??= (saved['product'] as Map?)?.cast<String, Object?>();
+    } catch (_) {
+      // Ignore an old or damaged snapshot and start a fresh session.
+    } finally {
+      _restored = true;
+    }
+  }
+
   Future<void> _loadSettings() async {
+    await _restoreSession();
     try {
       settings = await data.loadSettings().timeout(const Duration(seconds: 8));
     } on TimeoutException {
@@ -111,6 +224,7 @@ class AssistantController extends ChangeNotifier {
 
   void setCurrentProduct(Map<String, Object?>? product) {
     _currentProduct = product == null ? null : Map.of(product);
+    _scheduleSave();
   }
 
   /// Installs the foreground camera capture flow used by the shopping
@@ -126,6 +240,7 @@ class AssistantController extends ChangeNotifier {
   void updateCurrentProduct(Map<String, Object?> update) {
     if (update.isEmpty || _currentProduct == null) return;
     _currentProduct = {...?_currentProduct, ...update};
+    _scheduleSave();
   }
 
   Future<void> announceCameraBriefing({
@@ -623,6 +738,9 @@ Call request_camera_photo only when the specific product is unidentified, or the
     await speech.cancel();
     await stopAudio();
     messages.clear();
+    inputDraft = '';
+    shoppingDraft = '';
+    _currentProduct = null;
     _history.clear();
     pendingAction = null;
     _pendingToolCallId = null;
@@ -644,7 +762,7 @@ Call request_camera_photo only when the specific product is unidentified, or the
       await Future.wait([
         tts.stop(),
         if (_liveTts case final live? when !identical(tts, live)) live.stop(),
-      ]);
+      ]).timeout(const Duration(seconds: 2));
     } catch (_) {}
     speaking = false;
     preparingSpeech = false;
@@ -805,10 +923,19 @@ Call request_camera_photo only when the specific product is unidentified, or the
     }
   }
 
-  Future<void> suspend() async {
+  Future<void> suspend() {
+    unawaited(saveSession());
     _suspended = true;
     _listeningEpoch++;
-    await speech.stop();
+    return _suspending ??= _suspendResources().whenComplete(() {
+      _suspending = null;
+    });
+  }
+
+  Future<void> _suspendResources() async {
+    try {
+      await speech.stop().timeout(const Duration(seconds: 2));
+    } catch (_) {}
     listening = false;
     await stopAudio();
     _notify();
@@ -929,6 +1056,8 @@ Call request_camera_photo only when the specific product is unidentified, or the
 
   @override
   void dispose() {
+    unawaited(saveSession());
+    _saveTimer?.cancel();
     _disposed = true;
     _spokenTextExpiry?.cancel();
     _epoch++;

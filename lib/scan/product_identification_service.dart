@@ -77,6 +77,25 @@ class ProductIdentification {
     ].join(' ');
   }
 
+  Map<String, Object?> toJson() => {
+    'status': status,
+    'product_name': productName,
+    'brand': brand,
+    'variant': variant,
+    'package_size': packageSize,
+    'sku': sku,
+    'gtin': gtin,
+    'catalog_product_id': catalogProductId,
+    'confidence': confidence,
+    'product_name_confidence': productNameConfidence,
+    'brand_confidence': brandConfidence,
+    'variant_confidence': variantConfidence,
+    'sku_confidence': skuConfidence,
+    'gtin_confidence': gtinConfidence,
+    'evidence': evidence,
+    'uncertainties': uncertainties,
+  };
+
   factory ProductIdentification.fromJson(Map<String, dynamic> json) {
     String? optionalString(String key) {
       final value = json[key];
