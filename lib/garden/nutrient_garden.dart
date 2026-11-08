@@ -10,6 +10,10 @@ typedef GardenTreesBuilder = Widget Function(
   double progress,
 );
 
+/// Called when the valley's sun crosses the horizon: true at sunrise, false
+/// at sunset.
+typedef GardenDayNightChanged = void Function(bool isDay);
+
 /// The home tab's backdrop: a sunrise river valley whose lushness follows
 /// the user's nutrient score from [NutrientScoreService]. It fills whatever
 /// space it is given (the whole home tab, behind the status and bottom bars).
@@ -22,6 +26,7 @@ class NutrientGarden extends StatefulWidget {
     required this.userId,
     this.loader,
     this.treesBuilder,
+    this.onDayNightChanged,
   });
 
   final String userId;
@@ -32,6 +37,9 @@ class NutrientGarden extends StatefulWidget {
   /// Builds the scene for a progress value; defaults to [SunriseValley].
   /// Tests override this to check the progress without painting.
   final GardenTreesBuilder? treesBuilder;
+
+  /// Called when the sun crosses the horizon; see [SunriseValley.onDayNightChanged].
+  final GardenDayNightChanged? onDayNightChanged;
 
   @override
   State<NutrientGarden> createState() => _NutrientGardenState();
@@ -67,7 +75,7 @@ class _NutrientGardenState extends State<NutrientGarden> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final scene = widget.treesBuilder ?? _valley;
+    final scene = widget.treesBuilder;
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -75,7 +83,12 @@ class _NutrientGardenState extends State<NutrientGarden> {
           tween: Tween(end: _progress),
           duration: const Duration(milliseconds: 800),
           curve: Curves.easeOut,
-          builder: (context, progress, _) => scene(context, progress),
+          builder: (context, progress, _) =>
+              scene?.call(context, progress) ??
+              SunriseValley(
+                progress: _minLushness + (1 - _minLushness) * progress,
+                onDayNightChanged: widget.onDayNightChanged,
+              ),
         ),
         if (_empty)
           // Above the bottom bar: the Scaffold extends the body behind it and
@@ -107,9 +120,5 @@ class _NutrientGardenState extends State<NutrientGarden> {
   /// The valley's lushness at a score of zero. The home screen always looks
   /// at least this full; the score grows it the rest of the way.
   static const _minLushness = 0.7;
-
-  static Widget _valley(BuildContext context, double progress) =>
-      SunriseValley(
-        progress: _minLushness + (1 - _minLushness) * progress,
-      );
 }
+

@@ -263,41 +263,59 @@ class _ScanButton extends StatelessWidget {
   }
 }
 
-class _HomeTab extends StatelessWidget {
+class _HomeTab extends StatefulWidget {
   const _HomeTab({super.key, required this.user});
 
   final User user;
 
   @override
+  State<_HomeTab> createState() => _HomeTabState();
+}
+
+class _HomeTabState extends State<_HomeTab> {
+  /// Matches the valley's sky: the sun starts up (the scene opens at
+  /// sunrise) and [NutrientGarden.onDayNightChanged] flips this at
+  /// sunset and sunrise.
+  bool _isDay = true;
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final name = user.displayName ?? user.email?.split('@').first ?? 'there';
-    const shadow = [Shadow(blurRadius: 8, color: Colors.black38)];
+    // Black against the bright daytime sky, white against the night one.
+    final color = _isDay ? Colors.black : Colors.white;
+    const shadow = [Shadow(blurRadius: 8, color: Colors.white54)];
     return Stack(
-      // Expand to the full tab; otherwise the greeting Column (the only
+      // Expand to the full tab; otherwise the title Column (the only
       // non-positioned child) sizes the Stack to the width of its text.
       fit: StackFit.expand,
       children: [
-        NutrientGarden(key: ValueKey(user.uid), userId: user.uid),
-        // Greeting overlaid on the sky, clear of the status bar.
+        NutrientGarden(
+          key: ValueKey(widget.user.uid),
+          userId: widget.user.uid,
+          onDayNightChanged: (isDay) {
+            if (mounted && _isDay != isDay) setState(() => _isDay = isDay);
+          },
+        ),
+        // Title in the upper part of the middle, clear of the status bar.
         SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Align(
+            alignment: const Alignment(0, -0.45),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'Hi, $name',
-                  style: theme.textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
+                  'Clean Bite',
+                  style: theme.textTheme.headlineLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: color,
                     shadows: shadow,
                   ),
                 ),
+                const SizedBox(height: 4),
                 Text(
                   'Your health, in one place.',
                   style: theme.textTheme.bodyMedium?.copyWith(
-                    color: Colors.white.withValues(alpha: .95),
+                    color: color.withValues(alpha: .8),
                     shadows: shadow,
                   ),
                 ),

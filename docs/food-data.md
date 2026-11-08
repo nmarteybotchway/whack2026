@@ -21,14 +21,15 @@ Code: `lib/food/` (`food.dart`, `health_condition.dart`, `preference.dart`,
 | `personal_prefs` | string[] | `personalPrefs` | `Preference.id`s this food clashes with (e.g. beef for `hinduism`). Never `none`. |
 | `local_news` | string | `localNews` | Current food-safety news (outbreak, recall) for Coventry/the UK; `''` when none. `Food.hasNews` is `localNews.isNotEmpty`. |
 | `general_info` | string | `generalInfo` | Why even a healthy person should avoid or limit it (e.g. processed meat); `''` when the food is fine. |
+| `sources` | string[] | `sources` | Optional. URLs backing the `local_news` and `general_info` answers; empty when there is none. |
 | `nutrients` | map string → number | `nutrients` | Optional. Vitamins/minerals per 100 g, keyed by `Nutrient.id`, in each nutrient's unit. |
 | `updatedAt` | timestamp | (not kept) | Server timestamp set by `FoodRepository.save` and by `tool/src/food_store.dart`. |
 
 Firestore has no set type, so the two clash sets are arrays. `firestore.rules`
 requires `food`, `alternatives`, `health_conditions`, `personal_prefs`,
 `local_news` and `general_info` on every write, allows only those plus
-`nutrients` and `updatedAt`, and lets any signed-in user (including anonymous)
-read, write and delete (delete is for `tool/dedupe_food.dart`).
+`sources`, `nutrients` and `updatedAt`, and lets any signed-in user (including
+anonymous) read, write and delete (delete is for `tool/dedupe_food.dart`).
 
 `Food.fromMap` is tolerant: unknown condition, preference and nutrient IDs are
 skipped (so older clients survive new IDs), alternatives in an older non-nested
@@ -267,12 +268,13 @@ dart run tool/fill_food.dart food.txt [--dry-run] [--full]
 - **New foods** (or all with `--full`): one OpenRouter call **with web
   search** returns `health_conditions`, `personal_prefs`, `general_info` and
   `local_news` (food-safety news for "Coventry and the UK" from the last 30
-  days); a second call fills `alternatives` for every condition/preference
-  pair (see above), dropping substitutes equal to the food itself and pairs
-  that were not asked for; a third fills `nutrients` per 100 g from standard
-  composition tables (USDA FoodData Central / UK CoFID style).
-- **Existing foods** (without `--full`): only `local_news` is refreshed, and
-  `nutrients` are filled if the stored food has none.
+  days), plus `sources` (the URLs of the consulted search results); a second
+  call fills `alternatives` for every condition/preference pair (see above),
+  dropping substitutes equal to the food itself and pairs that were not asked
+  for; a third fills `nutrients` per 100 g from standard composition tables
+  (USDA FoodData Central / UK CoFID style).
+- **Existing foods** (without `--full`): only `local_news` and `sources` are
+  refreshed, and `nutrients` are filled if the stored food has none.
 - Five foods are processed concurrently; web-search calls time out after
   10 minutes.
 
@@ -286,9 +288,9 @@ Asks OpenRouter which names mean the same food (`Apple` / `Apples`, `Toast` /
 `Bread (Toast)`), merges each group under the chosen name and deletes the
 others in one atomic commit. Clash sets are unioned, alternatives are joined
 per pair in first-seen order (dropping the merged foods themselves), the first
-non-empty `general_info` is kept and distinct `local_news` is joined. Note:
-`_merge` does not carry `nutrients` over, so a merged food is written with
-none until the next `fill_food.dart` run refills them.
+non-empty `general_info` is kept, distinct `local_news` is joined and `sources`
+are unioned. Note: `_merge` does not carry `nutrients` over, so a merged food
+is written with none until the next `fill_food.dart` run refills them.
 
 ### 3. `fill_food_images.dart`
 
