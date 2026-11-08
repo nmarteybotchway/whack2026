@@ -1,4 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import 'diet_window_service.dart';
@@ -135,80 +134,18 @@ class _DietHistoryPageState extends State<DietHistoryPage> {
                     padding: EdgeInsets.symmetric(vertical: 8),
                     child: Text('No receipt purchases tracked yet.'),
                   ),
-                for (final day in days)
+                for (final day in days) ...[
                   _DayCard(
                     day: day,
                     onDelete: () => _delete(context, diet, day.id),
                   ),
-              ],
-            );
-          },
-        ),
-        const SizedBox(height: 20),
-        Text('Manual food logs', style: theme.textTheme.titleLarge),
-        const SizedBox(height: 4),
-        const Text(
-          'Foods you logged as eaten or purchased. These stay separate from receipt totals.',
-        ),
-        const SizedBox(height: 8),
-        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: FirebaseFirestore.instance
-              .collection('users')
-              .doc(userId)
-              .collection('foodEntries')
-              .orderBy('localDate', descending: true)
-              .limit(100)
-              .snapshots(),
-          builder: (context, snapshot) {
-            if (snapshot.hasError) {
-              return const Text('Cannot load manual food logs.');
-            }
-            if (!snapshot.hasData) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            final docs = snapshot.data!.docs;
-            if (docs.isEmpty) return const Text('No manual food logs yet.');
-            return Column(
-              children: [
-                for (final doc in docs) _ManualEntryCard(data: doc.data()),
+                  const SizedBox(height: 8),
+                ],
               ],
             );
           },
         ),
       ],
-    );
-  }
-}
-
-class _ManualEntryCard extends StatelessWidget {
-  const _ManualEntryCard({required this.data});
-
-  final Map<String, dynamic> data;
-
-  @override
-  Widget build(BuildContext context) {
-    final localDay = data['localDay'];
-    final date = localDay is String
-        ? DateTime.tryParse(localDay)
-        : (data['localDate'] as Timestamp?)?.toDate().toLocal();
-    final kind = data['kind'] == 'eaten' ? 'Eaten' : 'Purchased';
-    final amount = data['amount'];
-    return Card(
-      child: ListTile(
-        leading: Icon(
-          data['kind'] == 'eaten'
-              ? Icons.restaurant
-              : Icons.shopping_bag_outlined,
-        ),
-        title: Text(data['name'] as String? ?? 'Food'),
-        subtitle: Text(
-          [
-            kind,
-            if (amount is String && amount.isNotEmpty) amount,
-            if (date != null) _formatDay(date),
-          ].join(' · '),
-        ),
-      ),
     );
   }
 }
