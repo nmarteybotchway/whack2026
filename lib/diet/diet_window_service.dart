@@ -5,6 +5,16 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'receipt_parser.dart';
 import 'receipt_store.dart';
 
+/// How much of one food was bought on a day, summed across its receipts.
+class DietItemTotals {
+  const DietItemTotals({required this.quantity, required this.spent});
+
+  final int quantity;
+
+  /// Total paid for this food that day.
+  final double spent;
+}
+
 /// One stored diet day: the foods bought that day plus the aggregated
 /// vitamins and minerals of everything bought.
 class DietDay {
@@ -13,6 +23,7 @@ class DietDay {
     required this.date,
     required this.foods,
     required this.nutrition,
+    this.items = const {},
   });
 
   /// Firestore document id (`yyyy-MM-dd`).
@@ -27,6 +38,13 @@ class DietDay {
   /// Aggregated nutrients for the day, keyed by shorthand (CA, VITC, ...).
   final Map<String, double> nutrition;
 
+  /// Quantity and spend per food name. Empty for days saved before
+  /// quantities were stored.
+  final Map<String, DietItemTotals> items;
+
+  /// Total spent across the day's receipts.
+  double get spent => items.values.fold(0, (total, item) => total + item.spent);
+
   /// Parses one `users/{uid}/diet/{yyyy-MM-dd}` document.
   factory DietDay.fromDoc(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data();
@@ -38,6 +56,14 @@ class DietDay {
       nutrition: <String, double>{
         for (final entry in (data['nutrition'] as Map? ?? {}).entries)
           if (entry.value is num) '${entry.key}': (entry.value as num).toDouble(),
+      },
+      items: <String, DietItemTotals>{
+        for (final entry in (data['items'] as Map? ?? {}).entries)
+          if (entry.value case {'quantity': num quantity, 'spent': num spent})
+            '${entry.key}': DietItemTotals(
+              quantity: quantity.round(),
+              spent: spent.toDouble(),
+            ),
       },
     );
   }

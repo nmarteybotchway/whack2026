@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'diet_window_service.dart';
 import 'nutrient_tracker_page.dart';
+import 'receipt_parser.dart';
 import 'receipt_scan_page.dart';
 
 /// Diet history: scan grocery receipts and browse the stored diet, organised
@@ -165,7 +166,11 @@ class _DayCard extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: ExpansionTile(
         title: Text(_formatDay(date)),
-        subtitle: Text('${foods.length} foods'),
+        subtitle: Text(
+          day.items.isEmpty
+              ? '${foods.length} foods'
+              : '${foods.length} foods · ${formatPrice(day.spent)}',
+        ),
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -174,7 +179,10 @@ class _DayCard extends StatelessWidget {
               child: Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: [for (final food in foods) Chip(label: Text(food))],
+                children: [
+                  for (final food in foods)
+                    Chip(label: Text(_foodLabel(food, day.items[food]))),
+                ],
               ),
             ),
           ),
@@ -217,6 +225,12 @@ class _DayCard extends StatelessWidget {
     );
   }
 }
+
+/// A food's chip label, e.g. `Milk ×2 · £3.30`. Days saved before
+/// quantities were stored have no [totals] and show the name alone.
+String _foodLabel(String food, DietItemTotals? totals) => totals == null
+    ? food
+    : '$food ×${totals.quantity} · ${formatPrice(totals.spent)}';
 
 /// A small box showing one nutrient's shorthand and aggregated amount.
 class _NutrientBox extends StatelessWidget {

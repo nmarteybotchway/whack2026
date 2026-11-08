@@ -43,6 +43,8 @@ class _ReceiptReviewSheetState extends State<ReceiptReviewSheet> {
   late final List<ReceiptItem> _items = List.of(widget.items);
   DateTime _day = DateTime.now();
 
+  double get _total => _items.fold(0, (total, item) => total + item.lineTotal);
+
   bool get _isToday {
     final now = DateTime.now();
     return _day.year == now.year && _day.month == now.month && _day.day == now.day;
@@ -88,6 +90,20 @@ class _ReceiptReviewSheetState extends State<ReceiptReviewSheet> {
                 item: _items[i],
                 onRemove: () => setState(() => _items.removeAt(i)),
               ),
+            if (_items.isNotEmpty) ...[
+              const Divider(),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text('Total', style: theme.textTheme.titleMedium),
+                  ),
+                  Text(formatPrice(_total), style: theme.textTheme.titleMedium),
+                  // Lines up with the item prices, which sit left of the
+                  // delete button.
+                  const SizedBox(width: 48),
+                ],
+              ),
+            ],
             const SizedBox(height: 8),
             Card(
               child: ListTile(
@@ -143,10 +159,17 @@ class _ItemTile extends StatelessWidget {
     return ListTile(
       contentPadding: EdgeInsets.zero,
       title: Text(item.name),
-      trailing: IconButton(
-        tooltip: 'Remove item',
-        icon: const Icon(Icons.delete_outline),
-        onPressed: onRemove,
+      subtitle: Text('Qty ${item.quantity} × ${formatPrice(item.price)}'),
+      trailing: Row(
+        mainAxisSize: .min,
+        children: [
+          Text(formatPrice(item.lineTotal)),
+          IconButton(
+            tooltip: 'Remove item',
+            icon: const Icon(Icons.delete_outline),
+            onPressed: onRemove,
+          ),
+        ],
       ),
     );
   }
