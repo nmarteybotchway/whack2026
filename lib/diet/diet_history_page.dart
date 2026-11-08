@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'diet_summary_card.dart';
 import 'diet_window_service.dart';
 import 'nutrient_tracker_page.dart';
 import 'receipt_parser.dart';
@@ -114,6 +115,8 @@ class _DietHistoryPageState extends State<DietHistoryPage> {
           label: const Text('Nutrient tracker'),
         ),
         const SizedBox(height: 16),
+        DietSummaryCard(userId: userId),
+        const SizedBox(height: 8),
         StreamBuilder<List<DietDay>>(
           stream: _days,
           builder: (context, snapshot) {
