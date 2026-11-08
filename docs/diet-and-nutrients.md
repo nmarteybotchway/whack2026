@@ -338,12 +338,27 @@ extends the body behind the status bar and bottom bar.
 | `insights.isEmpty` | Valley at 0 plus "Scan a receipt to grow your garden" above the bottom bar |
 | Otherwise | Valley at the score |
 
-`SunriseValley(progress:)` is a single `CustomPainter`: a sunrise sky, sun,
-clouds and birds, layered ridges with mist bands, a meadow, and an S-curve
-river that widens toward the viewer. `progress` drives the sky warmth, the
-meadow green and how many trees and tufts appear and how big they grow,
-from sparse saplings at 0 to a full valley at 1. Positions are seeded, so the
-scene is the same on every build. Tests replace it through `treesBuilder`.
+`SunriseValley(progress:)` is a single `CustomPainter`: sky, sun and moon,
+stars, clouds and birds, layered ridges with mist bands, a meadow, and an
+S-curve river that widens toward the viewer. `progress` drives how many trees
+and tufts appear, how big they grow and how saturated the greens are, from
+sparse saplings at 0 to a full valley at 1. Layout positions are seeded, so
+the scene is the same on every build. Tests replace it through
+`treesBuilder`.
+
+It animates from a `Ticker` that feeds a `ValueNotifier<double>` of scene
+seconds straight to the painter (`CustomPainter(repaint:)`), so frames
+repaint without rebuilding widgets. `ValleyClock` turns those seconds into:
+
+| Cycle | Length | What changes |
+| --- | --- | --- |
+| Day/night | `dayLength` 48 s, 65 % daylight | Sun arcs left to right; sky keyed by sun height (night, twilight, golden, morning, noon); moon and twinkling stars at night; land lit through one `ColorFilter` (`BlendMode.modulate`) tint |
+| Seasons | `daysPerSeason` 3 days each | Spring blossom and petals, summer greens, autumn amber and falling leaves, winter snow, frosted trees and snowfall; each blends into the next during its last day's daylight |
+| Ambient | continuous | Clouds drift and wrap; birds fly by day; trees, crest conifers and grass sway in gusting wind; light streaks flow down the river under the reflected sun or moon |
+
+The scene opens just after sunrise in today's season (`ValleySeason.of`,
+northern hemisphere), or `startSeason`. `animate: false`, or the platform's
+reduced-motion setting (`MediaQuery.disableAnimationsOf`), freezes it.
 
 ### `NutrientScoreService`
 
@@ -369,6 +384,7 @@ the tracker never disagree.
 | `test/diet/receipt_store_test.dart` | `ReceiptStore.dayWrite` increments each nutrient so same-day receipts add up; leaves `nutrition` out when there is nothing to add |
 | `test/diet/receipt_parser_test.dart` | price-only lines, single-line name+price, skip lines, skip keywords mid-name, quantity prefix, comma decimals/currency, unpaired names, `toMap`/`fromMap`, tax flag, glued price, qty-at-unit-price |
 | `test/garden/nutrient_score_service_test.dart` | empty insights score 0; all targets met score 1; half goals; sodium at, over and far over the limit; megadose clamping; `scoreFor` uses the injected loader |
+| `test/garden/sunrise_valley_test.dart` | month to season; each season opens just after sunrise; noon/midnight sun height; a season holds then turns in its last day's daylight; winter wraps to spring; a full year of frames paints without errors; reduced motion stops the ticker |
 | `test/garden/nutrient_garden_test.dart` | trees at 0 while loading; empty-diet hint; error falls back to 0; a non-empty diet grows to the expected score (fake loader and `treesBuilder`) |
 | `test/diet/veryfi_service_test.dart` | line-item mapping, total-only items, multi-line descriptions from a real Veryfi response, signed headers and base64 body, `VeryfiException` on non-200 (uses `MockClient`) |
 
