@@ -338,6 +338,11 @@ extends the body behind the status bar and bottom bar.
 | `insights.isEmpty` | Valley at 0 plus "Scan a receipt to grow your garden" above the bottom bar |
 | Otherwise | Valley at the score |
 
+The default scene maps the score onto `SunriseValley`'s top 30 %
+(`_minLushness` 0.7), so the home screen is never bare: a score of 0 shows a
+well-grown valley and a perfect score the fullest one. "Valley at 0" above
+means that floor.
+
 `SunriseValley(progress:)` is a single `CustomPainter`: sky, sun and moon,
 stars, clouds and birds, layered ridges with mist bands, a meadow, and an
 S-curve river that widens toward the viewer. `progress` drives how many trees

@@ -104,6 +104,12 @@ class _NutrientGardenState extends State<NutrientGarden> {
     );
   }
 
+  /// The valley's lushness at a score of zero. The home screen always looks
+  /// at least this full; the score grows it the rest of the way.
+  static const _minLushness = 0.7;
+
   static Widget _valley(BuildContext context, double progress) =>
-      SunriseValley(progress: progress);
+      SunriseValley(
+        progress: _minLushness + (1 - _minLushness) * progress,
+      );
 }
