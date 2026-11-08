@@ -112,13 +112,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Future<void> _scan() async {
     await _assistant.suspend();
     if (!mounted) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
+    final tab = await Navigator.of(context).push<int>(
+      MaterialPageRoute<int>(
         builder: (_) =>
             ScanPage(userId: widget.user.uid, assistant: _assistant),
       ),
     );
-    if (mounted) setState(() => _scans++);
+    if (!mounted) return;
+    // Returning a tab index means the user tapped a tab on the scan-result
+    // sheet's navigation bar; land them on it. Otherwise treat it as a scan.
+    if (tab != null) {
+      setState(() => _index = tab);
+      return;
+    }
+    setState(() => _scans++);
   }
 
   @override

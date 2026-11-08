@@ -13,14 +13,17 @@ import 'product_identification_service.dart';
 /// Pass [newsService] to show a food news alert under the product details.
 /// Pass [recommendationService] and [userId] to also show whether the food
 /// is safe for this user and what to buy instead.
-Future<void> showAnalysisResult(
+///
+/// Returns the home-page tab index the user picked from the sheet's
+/// navigation bar, or null when they dismissed it to scan again.
+Future<int?> showAnalysisResult(
   BuildContext context,
   AnalysisResult result, {
   FoodNewsService? newsService,
   FoodRecommendationService? recommendationService,
   String? userId,
 }) {
-  return showModalBottomSheet<void>(
+  return showModalBottomSheet<int>(
     context: context,
     showDragHandle: true,
     isScrollControlled: true,
@@ -199,10 +202,92 @@ class _AnalysisResultSheetState extends State<AnalysisResultSheet> {
               ),
             ],
             const SizedBox(height: 16),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Scan again'),
+            _SheetNavBar(
+              onScanAgain: () => Navigator.of(context).pop(),
+              onTab: (tab) => Navigator.of(context).pop(tab),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Navigation bar shown at the bottom of the scan-result sheet: a scan-again
+/// action in the middle, and Home / History on the left, Assistant / Settings
+/// on the right — the same layout as the home page's bar. Tapping a tab pops
+/// the sheet with that tab index so the home page can switch to it.
+class _SheetNavBar extends StatelessWidget {
+  const _SheetNavBar({required this.onScanAgain, required this.onTab});
+
+  final VoidCallback onScanAgain;
+  final ValueChanged<int> onTab;
+
+  static const _leftTabs = [
+    ('Home', Icons.home_outlined, Icons.home),
+    ('History', Icons.history_outlined, Icons.history),
+  ];
+  static const _rightTabs = [
+    ('Assistant', Icons.chat_bubble_outline, Icons.chat_bubble),
+    ('Settings', Icons.settings_outlined, Icons.settings),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    Widget item(int index, (String, IconData, IconData) tab) => Expanded(
+          child: InkWell(
+            onTap: () => onTab(index),
+            borderRadius: BorderRadius.circular(12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(tab.$2, color: colors.primary),
+                const SizedBox(height: 4),
+                Text(
+                  tab.$1,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelSmall
+                      ?.copyWith(color: colors.primary),
+                ),
+              ],
+            ),
+          ),
+        );
+
+    // A BottomAppBar needs a Scaffold ancestor, which a modal sheet does not
+    // have, so the same layout is built from a plain surface container.
+    return SafeArea(
+      top: false,
+      child: Container(
+        height: 80,
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        color: colors.surface,
+        child: Row(
+          children: [
+            for (var i = 0; i < _leftTabs.length; i++) item(i, _leftTabs[i]),
+            Expanded(
+              child: Center(
+                child: SizedBox.square(
+                  dimension: 60,
+                  child: FloatingActionButton(
+                    heroTag: null,
+                    tooltip: 'Scan again',
+                    shape: const CircleBorder(),
+                    backgroundColor: colors.primary,
+                    foregroundColor: colors.onPrimary,
+                    elevation: 2,
+                    onPressed: onScanAgain,
+                    child: const Icon(Icons.qr_code_scanner, size: 30),
+                  ),
+                ),
+              ),
+            ),
+            for (var i = 0; i < _rightTabs.length; i++)
+              item(i + _leftTabs.length, _rightTabs[i]),
           ],
         ),
       ),
@@ -213,8 +298,7 @@ class _AnalysisResultSheetState extends State<AnalysisResultSheet> {
 /// The name the food news and recommendation services look up for a scanned
 /// product: the fuzzily matched [KnownFood] when there is one, since stored
 /// foods have generic names, else the product name as read.
-String _newsFoodName(ProductIdentification product) {
-  final productName = product.productName;
+String _newsFoodName(ProductIdentification product) {  final productName = product.productName;
   final name = (productName != null && productName.isNotEmpty)
       ? productName
       : product.displayName;

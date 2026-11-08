@@ -229,7 +229,7 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
         },
         if (result.error != null) 'error': result.error,
       });
-      await showAnalysisResult(
+      final tab = await showAnalysisResult(
         context,
         result,
         newsService: FoodNewsService(),
@@ -238,6 +238,12 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
             : FoodRecommendationService(),
         userId: widget.userId,
       );
+      // The user picked a home-page tab from the result sheet's navigation
+      // bar: pop back home and land on it.
+      if (tab != null && mounted) {
+        Navigator.of(context).pop(tab);
+        return;
+      }
     }
     if (mounted && _controller == controller) await _startStream();
   }
