@@ -22,7 +22,7 @@ in [`lib/health_data/README.md`](../lib/health_data/README.md).
 | Settings → "Height, weight & BMI" | `BodyMeasurementsCard` | `BodyMeasurementsPage` in a bottom sheet (`closeOnSave: true`) |
 | Settings → "Health data" switch | `HealthDataCard` | Inline. Switching on calls `HealthDataStore.collectAndStore`; "Delete stored data" removes `healthData/latest` |
 | First launch on Android (after sign-in) | `showHealthTrackingIntro` dialog, from `HomePage` | "Connect and upload" → `HealthTrackingController.connect()`; "Not now" just marks the intro as seen |
-| *(not placed anywhere at the moment)* | `HealthTrackingCard` | `BloodPressurePage` (connect / refresh / stop / delete, latest 20 readings) → `HeartRatePage` (7-day heart rate read live from Health Connect, not stored) |
+| Settings → "Health tracking" | `HealthTrackingCard` | `BloodPressurePage` (connect / refresh / stop / delete, latest 20 readings) → `HeartRatePage` (7-day heart rate read live from Health Connect, not stored) |
 
 ## Code map
 
@@ -133,18 +133,10 @@ Connect.
 
 ## Known gaps
 
-- `HealthTrackingCard` is defined but not placed on any page. After the intro
-  dialog, the only way to reach `BloodPressurePage`/`HeartRatePage`
-  (refresh, stop, delete uploaded readings, heart-rate view) is to add the
-  card back. `SettingsPage` already receives the `tracking` controller.
 - `HealthDataCard` calls `collectAndStore` without checking availability or
   calling `requestPermission`. It only works after permission has been
   granted elsewhere (the intro dialog or `HeartRatePage`). Because each
   native `read*` throws when its own type is not granted, a single missing
   type (for example sleep) fails the whole snapshot.
-- `HealthDataCard._load` uses `doc.get('optedIn')`, which throws a
-  `StateError` (not a `FirebaseException`, so it is not caught) when
-  `healthData/latest` or its `optedIn` field does not exist. The switch then
-  stays off, but the error goes unhandled.
 - The "Health data" card text says it is "Collecting your readings", but the
   snapshot is taken only once (see above).
