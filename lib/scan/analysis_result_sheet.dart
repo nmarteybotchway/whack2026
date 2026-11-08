@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../assistant/assistant_controller.dart';
 import '../food/food_matcher.dart';
@@ -410,6 +411,78 @@ class _FoodNewsAlertState extends State<_FoodNewsAlert> {
     }
   }
 
+  /// Where the news came from: stored outlet names or URLs.
+  void _showSources(BuildContext context, List<String> sources) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('News sources'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final source in sources) ...[
+              // URLs open in the browser; plain text stays a list item.
+              if (Uri.tryParse(source)?.hasScheme ?? false)
+                InkWell(
+                  onTap: () => _launch(source),
+                  borderRadius: BorderRadius.circular(4),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Text(
+                      '• $source',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                  ),
+                )
+              else
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text('• $source'),
+                ),
+              const SizedBox(height: 6),
+            ],
+          ],
+        ),
+        actions: [
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.tonal(
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Opens [url] in the browser, reporting failures through a snackbar.
+  Future<void> _launch(String url) async {
+    final uri = Uri.parse(url);
+    try {
+      if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+        throw Exception('launchUrl returned false');
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.maybeOf(
+          context,
+        )?.showSnackBar(
+          const SnackBar(content: Text('Could not open link.')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<FoodNewsResult>(
@@ -469,6 +542,16 @@ class _FoodNewsAlertState extends State<_FoodNewsAlert> {
                     ),
                     const SizedBox(width: 8),
                     Text('Food alert', style: theme.textTheme.titleMedium),
+                    const Spacer(),
+                    if (news.sources.isNotEmpty)
+                      Tooltip(
+                        message: 'News sources',
+                        child: IconButton(
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => _showSources(context, news.sources),
+                          icon: const Icon(Icons.info_outline, size: 20),
+                        ),
+                      ),
                   ],
                 ),
                 const SizedBox(height: 8),
