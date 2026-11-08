@@ -170,8 +170,11 @@ class ValleyClock {
     // blend starts after dusk and finishes before the next sunrise.
     final dusk = (daysPerSeason - 1 + daylightShare) / daysPerSeason;
     final night = (1 - daylightShare) / daysPerSeason;
-    final blend = _smoothstep(dusk + 0.15 * night, dusk + 0.85 * night,
-        position - whole);
+    final blend = _smoothstep(
+      dusk + 0.15 * night,
+      dusk + 0.85 * night,
+      position - whole,
+    );
     return (whole + blend) % 4;
   }
 
@@ -207,8 +210,11 @@ Color _modulate(Color c, Color tint) => Color.from(
 /// Pulls [c] toward its own gray by [amount].
 Color _dull(Color c, double amount) {
   final g = 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
-  return Color.lerp(c, Color.from(alpha: c.a, red: g, green: g, blue: g),
-      amount)!;
+  return Color.lerp(
+    c,
+    Color.from(alpha: c.a, red: g, green: g, blue: g),
+    amount,
+  )!;
 }
 
 // ---------------------------------------------------------------------------
@@ -554,6 +560,7 @@ class _ValleyPainter extends CustomPainter {
     _paintStars(canvas, size);
     _paintMoon(canvas, size);
     _paintSun(canvas, size);
+    _paintPlane(canvas, size);
     _paintClouds(canvas, size);
     _paintBirds(canvas, size);
 
@@ -640,9 +647,14 @@ class _ValleyPainter extends CustomPainter {
           _Palette.moonGlow.withValues(alpha: 0.0),
         ]),
     );
-    canvas.drawCircle(c, r, Paint()..color = _Palette.moon.withValues(alpha: up));
+    canvas.drawCircle(
+      c,
+      r,
+      Paint()..color = _Palette.moon.withValues(alpha: up),
+    );
     // A few soft maria so it reads as a moon, not a second sun.
-    final shade = Paint()..color = _Palette.moonShade.withValues(alpha: 0.7 * up);
+    final shade = Paint()
+      ..color = _Palette.moonShade.withValues(alpha: 0.7 * up);
     canvas.drawCircle(c.translate(-r * 0.3, -r * 0.2), r * 0.28, shade);
     canvas.drawCircle(c.translate(r * 0.25, r * 0.3), r * 0.2, shade);
     canvas.drawCircle(c.translate(r * 0.35, -r * 0.35), r * 0.12, shade);
@@ -653,10 +665,12 @@ class _ValleyPainter extends CustomPainter {
     if (up <= 0.01) return;
     final center = _light.sun;
     final day = _light.day;
-    final glowColor =
-        Color.lerp(_Palette.sunGlowLow, _Palette.sunGlowHigh, day)!;
-    final glowRadius =
-        size.width * (0.34 + 0.12 * progress) * (1 - 0.3 * day);
+    final glowColor = Color.lerp(
+      _Palette.sunGlowLow,
+      _Palette.sunGlowHigh,
+      day,
+    )!;
+    final glowRadius = size.width * (0.34 + 0.12 * progress) * (1 - 0.3 * day);
     canvas.drawCircle(
       center,
       glowRadius,
@@ -777,11 +791,16 @@ class _ValleyPainter extends CustomPainter {
       final path = Path()
         ..moveTo(c.dx - wing, c.dy + wing * (0.4 - flap * 0.6))
         ..quadraticBezierTo(
-          c.dx - wing * 0.45, c.dy - wing * 0.95 * flap, c.dx, c.dy - wing * 0.18,
+          c.dx - wing * 0.45,
+          c.dy - wing * 0.95 * flap,
+          c.dx,
+          c.dy - wing * 0.18,
         )
         ..quadraticBezierTo(
-          c.dx + wing * 0.45, c.dy - wing * 0.95 * flap,
-          c.dx + wing, c.dy + wing * (0.4 - flap * 0.6),
+          c.dx + wing * 0.45,
+          c.dy - wing * 0.95 * flap,
+          c.dx + wing,
+          c.dy + wing * (0.4 - flap * 0.6),
         );
       canvas.drawPath(path, paint);
       i++;
@@ -797,7 +816,11 @@ class _ValleyPainter extends CustomPainter {
       (baseY: 0.56, amp: 0.06, peaks: 5, seed: 41, jagged: false, rim: true),
       (baseY: 0.62, amp: 0.045, peaks: 3, seed: 59, jagged: false, rim: true),
     ];
-    const mists = [(0.465, 0.05, 0.55), (0.53, 0.045, 0.5), (0.585, 0.04, 0.45)];
+    const mists = [
+      (0.465, 0.05, 0.55),
+      (0.53, 0.045, 0.5),
+      (0.585, 0.04, 0.45),
+    ];
     for (var i = 0; i < ridges.length; i++) {
       final r = ridges[i];
       final daylit = Color.lerp(
@@ -812,11 +835,27 @@ class _ValleyPainter extends CustomPainter {
         _look.snow * (0.45 - 0.11 * i),
       )!;
       _ridge(
-        canvas, size,
-        baseY: r.baseY, amp: r.amp, peaks: r.peaks, seed: r.seed,
-        color: color, jagged: r.jagged, rim: r.rim,
+        canvas,
+        size,
+        baseY: r.baseY,
+        amp: r.amp,
+        peaks: r.peaks,
+        seed: r.seed,
+        color: color,
+        jagged: r.jagged,
+        rim: r.rim,
         crestTrees: i == ridges.length - 1,
       );
+      if (i == 1) {
+        _paintCableCar(
+          canvas,
+          size,
+          baseY: r.baseY,
+          amp: r.amp,
+          peaks: r.peaks,
+          seed: r.seed,
+        );
+      }
       if (i < mists.length) {
         final (y, h, a) = mists[i];
         _mist(canvas, size, yFrac: y, hFrac: h, alpha: a);
@@ -861,20 +900,41 @@ class _ValleyPainter extends CustomPainter {
     required double amp,
     required bool jagged,
   }) {
-    final start =
-        _ridgePoint(ridge, size, 0, baseY: baseY, amp: amp, jagged: jagged);
+    final start = _ridgePoint(
+      ridge,
+      size,
+      0,
+      baseY: baseY,
+      amp: amp,
+      jagged: jagged,
+    );
     final path = Path()..moveTo(start.dx, start.dy);
     final n = ridge.nodes.length;
     for (var i = 1; i < n; i++) {
-      final p = _ridgePoint(ridge, size, i, baseY: baseY, amp: amp, jagged: jagged);
+      final p = _ridgePoint(
+        ridge,
+        size,
+        i,
+        baseY: baseY,
+        amp: amp,
+        jagged: jagged,
+      );
       if (jagged || i == n - 1) {
         path.lineTo(p.dx, p.dy);
       } else {
         final next = _ridgePoint(
-          ridge, size, i + 1, baseY: baseY, amp: amp, jagged: jagged,
+          ridge,
+          size,
+          i + 1,
+          baseY: baseY,
+          amp: amp,
+          jagged: jagged,
         );
         path.quadraticBezierTo(
-          p.dx, p.dy, (p.dx + next.dx) / 2, (p.dy + next.dy) / 2,
+          p.dx,
+          p.dy,
+          (p.dx + next.dx) / 2,
+          (p.dy + next.dy) / 2,
         );
       }
     }
@@ -894,7 +954,13 @@ class _ValleyPainter extends CustomPainter {
     required bool crestTrees,
   }) {
     final ridge = _buildRidge(peaks, seed);
-    final crest = _crestPath(ridge, size, baseY: baseY, amp: amp, jagged: jagged);
+    final crest = _crestPath(
+      ridge,
+      size,
+      baseY: baseY,
+      amp: amp,
+      jagged: jagged,
+    );
     final fill = Path.from(crest)
       ..lineTo(size.width, size.height)
       ..lineTo(0, size.height)
@@ -925,15 +991,20 @@ class _ValleyPainter extends CustomPainter {
 
     if (crestTrees) {
       _paintTreeRow(
-        canvas, size, ridge,
-        baseY: baseY, amp: amp,
+        canvas,
+        size,
+        ridge,
+        baseY: baseY,
+        amp: amp,
         color: Color.lerp(
           _Palette.crestTreesGolden,
           _Palette.crestTreesDay,
           _light.day,
         )!,
         crestHeight: size.height * 0.09,
-        baseCount: 2, fullCount: 10, sink: 0.012,
+        baseCount: 2,
+        fullCount: 10,
+        sink: 0.012,
       );
     }
   }
@@ -1033,7 +1104,10 @@ class _ValleyPainter extends CustomPainter {
           mist.withValues(alpha: 0),
         ],
       ).createShader(rect)
-      ..maskFilter = MaskFilter.blur(BlurStyle.normal, hFrac * size.height * 0.3);
+      ..maskFilter = MaskFilter.blur(
+        BlurStyle.normal,
+        hFrac * size.height * 0.3,
+      );
     canvas.drawRect(rect, paint);
   }
 
@@ -1066,7 +1140,8 @@ class _ValleyPainter extends CustomPainter {
   /// Center X of the river at parametric depth t (0 = horizon, 1 = viewer).
   /// It sways into an S-curve as it approaches the viewer.
   double _riverCenterX(double t, double width) {
-    final sway = math.sin(t * math.pi * 1.15 + 0.4) * 0.16 +
+    final sway =
+        math.sin(t * math.pi * 1.15 + 0.4) * 0.16 +
         math.sin(t * math.pi * 2.3 + 1.2) * 0.05;
     return width * (0.62 + sway * (0.2 + 0.8 * t) - 0.12 * t);
   }
@@ -1111,7 +1186,11 @@ class _ValleyPainter extends CustomPainter {
     final colors = [
       for (var i = 0; i < 4; i++)
         Color.lerp(
-          Color.lerp(_Palette.riverGolden[i], _Palette.riverDay[i], _light.day)!,
+          Color.lerp(
+            _Palette.riverGolden[i],
+            _Palette.riverDay[i],
+            _light.day,
+          )!,
           _Palette.ice,
           _look.snow * 0.45,
         )!,
@@ -1172,7 +1251,8 @@ class _ValleyPainter extends CustomPainter {
       final y = _riverY(t, size);
       final cx = _riverCenterX(t, size.width);
       final hw = _riverHalfWidth(t, diag);
-      final len = hw * (0.35 + 0.5 * (0.5 + 0.5 * math.sin(_time * 1.3 + i * 2)));
+      final len =
+          hw * (0.35 + 0.5 * (0.5 + 0.5 * math.sin(_time * 1.3 + i * 2)));
       final off = hw * 0.5 * math.sin(_time * 0.7 + i * 1.9);
       final warm = (1 - t).clamp(0.0, 1.0);
       final fade = math.sin(math.pi * u);
@@ -1195,7 +1275,9 @@ class _ValleyPainter extends CustomPainter {
   void _paintBanks(Canvas canvas, Size size) {
     for (final side in const [-1, 1]) {
       _paintBank(
-        canvas, size, side: side,
+        canvas,
+        size,
+        side: side,
         colorFar: _grown(_look.meadow[0]),
         colorNear: _grown(_look.meadow[1]),
       );
@@ -1217,7 +1299,8 @@ class _ValleyPainter extends CustomPainter {
     Offset point(double t, {required bool inner}) {
       final cx = _riverCenterX(t, size.width);
       final hw = _riverHalfWidth(t, diag);
-      final out = hw +
+      final out =
+          hw +
           diag *
               (0.035 + 0.22 * math.pow(t, 1.3).toDouble()) *
               (0.85 + 0.3 * math.sin(t * 7 + side * 2));
@@ -1306,7 +1389,8 @@ class _ValleyPainter extends CustomPainter {
     int index,
   ) {
     final t = spec.depth;
-    final y = size.height * _meadowTopFrac +
+    final y =
+        size.height * _meadowTopFrac +
         size.height * 0.62 * math.pow(t, 1.15).toDouble();
     final cx = _riverCenterX(t, size.width);
     final hw = _riverHalfWidth(t, diag);
@@ -1324,8 +1408,7 @@ class _ValleyPainter extends CustomPainter {
     final trunkH = scale * (1.5 + 0.5 * rnd.nextDouble());
     final trunkW = math.max(1.0, scale * 0.10);
     final blobs = 3 + (rnd.nextDouble() * 3).floor();
-    final canopyR =
-        scale * (0.55 + 0.35 * lush) * (0.6 + 0.4 * _look.canopy);
+    final canopyR = scale * (0.55 + 0.35 * lush) * (0.6 + 0.4 * _look.canopy);
     final greenT = (t * 0.85 + 0.1 * rnd.nextDouble()).clamp(0.0, 1.0);
     final blobShapes = [
       for (var i = 0; i < blobs; i++)
@@ -1338,8 +1421,7 @@ class _ValleyPainter extends CustomPainter {
     canvas.rotate(_wind(baseX) * (0.025 + 0.03 * t));
 
     final crownY = -trunkH - canopyR * 0.35;
-    final trunkColor =
-        Color.lerp(_Palette.trunkDark, _Palette.trunkLight, t)!;
+    final trunkColor = Color.lerp(_Palette.trunkDark, _Palette.trunkLight, t)!;
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromCenter(
@@ -1450,6 +1532,225 @@ class _ValleyPainter extends CustomPainter {
     }
   }
 
+  // -- Plane: crosses high every so often -------------------------------------
+
+  void _paintPlane(Canvas canvas, Size size) {
+    const period = 75.0;
+    const pass = 14.0;
+    final cycle = (_time / period).floor();
+    final phase = _time - cycle * period;
+    if (phase > pass) return;
+    final u = phase / pass;
+    // Alternate direction and altitude from one pass to the next.
+    final dir = cycle.isEven ? 1.0 : -1.0;
+    final unit = size.width / 400;
+    final y0 = size.height * (0.06 + 0.1 * _hash(cycle + 7000));
+    final climb = size.height * 0.03;
+    final x = size.width * (dir > 0 ? -0.1 + 1.2 * u : 1.1 - 1.2 * u);
+    final p = Offset(x, y0 - climb * u);
+    final night = _light.night;
+
+    // Contrail by day, fading back along the flight path.
+    final trail = (1 - night) * 0.55;
+    if (trail > 0.02) {
+      final back = size.width * 0.35;
+      final tail = Offset(
+        p.dx - dir * back,
+        p.dy + climb * back / (size.width * 1.2),
+      );
+      canvas.drawLine(
+        p.translate(-dir * 6 * unit, 0),
+        tail,
+        Paint()
+          ..strokeWidth = 1.6 * unit
+          ..strokeCap = StrokeCap.round
+          ..shader = ui.Gradient.linear(p, tail, [
+            Colors.white.withValues(alpha: trail),
+            Colors.white.withValues(alpha: 0),
+          ]),
+      );
+    }
+
+    canvas.save();
+    canvas.translate(p.dx, p.dy);
+    canvas.scale(dir * unit, unit);
+    canvas.rotate(-0.04);
+    final body = Paint()
+      ..color = Color.lerp(
+        const Color(0xFF6A7282),
+        const Color(0xFF1A1E30),
+        night,
+      )!;
+    // Fuselage, swept wings and tail fin, nose to the right.
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        const Rect.fromLTWH(-8, -1.4, 16, 2.8),
+        const Radius.circular(1.4),
+      ),
+      body,
+    );
+    canvas.drawPath(
+      Path()
+        ..moveTo(1.5, 0)
+        ..lineTo(-3, 6)
+        ..lineTo(-4.5, 6)
+        ..lineTo(-1.5, 0)
+        ..close(),
+      body,
+    );
+    canvas.drawPath(
+      Path()
+        ..moveTo(-5.5, -1)
+        ..lineTo(-8, -5)
+        ..lineTo(-9, -5)
+        ..lineTo(-8, -1)
+        ..close(),
+      body,
+    );
+    if (night > 0.05) {
+      // Navigation lights: a steady wingtip light, a blinking beacon.
+      final lights = Paint();
+      lights.color = const Color(0xFF6CFF8A).withValues(alpha: night);
+      canvas.drawCircle(const Offset(-3.8, 6), 0.9, lights);
+      if (_fract(_time * 1.1) < 0.18) {
+        lights.color = const Color(0xFFFF4D4D).withValues(alpha: night);
+        canvas.drawCircle(const Offset(-1, -1.6), 1.1, lights);
+      }
+    }
+    canvas.restore();
+  }
+
+  // -- Cable car up the middle ridge -------------------------------------------
+
+  void _paintCableCar(
+    Canvas canvas,
+    Size size, {
+    required double baseY,
+    required double amp,
+    required int peaks,
+    required int seed,
+  }) {
+    final ridge = _buildRidge(peaks, seed);
+    // Top station on the highest inner peak.
+    var top = 2;
+    for (var i = 2; i < ridge.nodes.length - 2; i += 2) {
+      if (ridge.nodes[i] > ridge.nodes[top]) top = i;
+    }
+    final summit = _ridgePoint(
+      ridge,
+      size,
+      top,
+      baseY: baseY,
+      amp: amp,
+      jagged: true,
+    );
+    // The line drops toward the middle of the screen and down behind the
+    // next ridge, as if into the valley.
+    final toward = summit.dx > size.width / 2 ? -1.0 : 1.0;
+    final foot = Offset(
+      summit.dx + toward * size.width * 0.32,
+      (baseY + 0.075) * size.height,
+    );
+    final unit = size.width / 400;
+    final sag = Offset(
+      (summit.dx + foot.dx) / 2,
+      (summit.dy + foot.dy) / 2 + size.height * 0.018,
+    );
+    // Two parallel haul cables, one per direction.
+    final gap = Offset(0, 2.2 * unit);
+    Offset at(double u, Offset shift) =>
+        foot * ((1 - u) * (1 - u)) +
+        sag * (2 * (1 - u) * u) +
+        summit * (u * u) +
+        shift;
+
+    final cable = Paint()
+      ..color = const Color(0xFF2A2A38).withValues(alpha: 0.75)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = math.max(0.8, 0.9 * unit);
+    for (final shift in [Offset.zero, gap]) {
+      final start = foot + shift;
+      final mid = sag + shift;
+      final end = summit + shift;
+      canvas.drawPath(
+        Path()
+          ..moveTo(start.dx, start.dy)
+          ..quadraticBezierTo(mid.dx, mid.dy, end.dx, end.dy),
+        cable,
+      );
+    }
+
+    // Pylons under the cable.
+    final pylon = Paint()
+      ..color = const Color(0xFF3A3A4A)
+      ..strokeWidth = math.max(1.0, 1.4 * unit)
+      ..strokeCap = StrokeCap.round;
+    for (final u in const [0.38, 0.7]) {
+      final p = at(u, gap);
+      final legs = 12 * unit;
+      canvas.drawLine(p, p.translate(-3 * unit, legs), pylon);
+      canvas.drawLine(p, p.translate(3 * unit, legs), pylon);
+      canvas.drawLine(
+        p.translate(-3 * unit, -0.5),
+        p.translate(3 * unit, -0.5),
+        pylon,
+      );
+    }
+
+    // Top station.
+    canvas.drawRect(
+      Rect.fromCenter(
+        center: summit.translate(0, 2 * unit),
+        width: 13 * unit,
+        height: 7 * unit,
+      ),
+      Paint()..color = const Color(0xFF5A5560),
+    );
+    canvas.drawRect(
+      Rect.fromCenter(
+        center: summit.translate(0, -2 * unit),
+        width: 15 * unit,
+        height: 2.2 * unit,
+      ),
+      Paint()..color = const Color(0xFF3A3640),
+    );
+
+    // Two gondolas passing each other, easing in and out of the stations.
+    double pingPong(double x) {
+      final f = _fract(x / 2) * 2;
+      return _smoothstep(0, 1, f < 1 ? f : 2 - f);
+    }
+
+    final up = pingPong(_time / 26);
+    final cars = [
+      (u: up, shift: Offset.zero, color: const Color(0xFFC8402F)),
+      (u: 1 - up, shift: gap, color: const Color(0xFF2F6FB0)),
+    ];
+    for (final car in cars) {
+      // Keep clear of the station building at the top.
+      final p = at(0.04 + 0.9 * car.u, car.shift);
+      final g = 5.5 * unit;
+      canvas.drawLine(p, p.translate(0, g * 0.7), pylon);
+      final cabin = RRect.fromRectAndRadius(
+        Rect.fromCenter(
+          center: p.translate(0, g * 1.15),
+          width: g * 1.25,
+          height: g * 0.9,
+        ),
+        Radius.circular(g * 0.2),
+      );
+      canvas.drawRRect(cabin, Paint()..color = car.color);
+      canvas.drawRect(
+        Rect.fromCenter(
+          center: p.translate(0, g * 1.05),
+          width: g * 0.95,
+          height: g * 0.3,
+        ),
+        Paint()..color = const Color(0xFFDDEEF5),
+      );
+    }
+  }
+
   // -- Seasonal weather: petals, leaves, snow -----------------------------------
 
   void _paintWeather(Canvas canvas, Size size) {
@@ -1464,16 +1765,37 @@ class _ValleyPainter extends CustomPainter {
     final autumn = weight(ValleySeason.autumn.index);
     final winter = weight(ValleySeason.winter.index);
     if (spring > 0.01) {
-      _fall(canvas, size, count: 16, seed: 1000, amount: spring,
-          speed: 0.045, shape: _Flake.petal);
+      _fall(
+        canvas,
+        size,
+        count: 16,
+        seed: 1000,
+        amount: spring,
+        speed: 0.045,
+        shape: _Flake.petal,
+      );
     }
     if (autumn > 0.01) {
-      _fall(canvas, size, count: 22, seed: 2000, amount: autumn,
-          speed: 0.06, shape: _Flake.leaf);
+      _fall(
+        canvas,
+        size,
+        count: 22,
+        seed: 2000,
+        amount: autumn,
+        speed: 0.06,
+        shape: _Flake.leaf,
+      );
     }
     if (winter > 0.01) {
-      _fall(canvas, size, count: 70, seed: 3000, amount: winter,
-          speed: 0.03, shape: _Flake.snow);
+      _fall(
+        canvas,
+        size,
+        count: 70,
+        seed: 3000,
+        amount: winter,
+        speed: 0.03,
+        shape: _Flake.snow,
+      );
     }
   }
 
@@ -1494,10 +1816,13 @@ class _ValleyPainter extends CustomPainter {
       // Fewer particles while the season fades in or out.
       if (_hash(n) > amount) continue;
       final fall = speed * (0.6 + 0.8 * _hash(n + 1));
-      final y = _fract(_hash(n + 2) + _time * fall) * size.height * 1.05 -
+      final y =
+          _fract(_hash(n + 2) + _time * fall) * size.height * 1.05 -
           size.height * 0.03;
-      final drift = math.sin(_time * (0.6 + _hash(n + 3)) + i) * size.width * 0.04;
-      final x = (_hash(n + 4) * size.width + drift + _wind(y) * 18 * unit) %
+      final drift =
+          math.sin(_time * (0.6 + _hash(n + 3)) + i) * size.width * 0.04;
+      final x =
+          (_hash(n + 4) * size.width + drift + _wind(y) * 18 * unit) %
           size.width;
       final c = Offset(x, y);
       switch (shape) {
@@ -1507,9 +1832,16 @@ class _ValleyPainter extends CustomPainter {
         case _Flake.leaf || _Flake.petal:
           final leaf = shape == _Flake.leaf;
           final base = leaf
-              ? Color.lerp(const Color(0xFFC9662E), const Color(0xFFE9B866),
-                  _hash(n + 6))!
-              : Color.lerp(const Color(0xFFF6B8CF), Colors.white, _hash(n + 6) * 0.5)!;
+              ? Color.lerp(
+                  const Color(0xFFC9662E),
+                  const Color(0xFFE9B866),
+                  _hash(n + 6),
+                )!
+              : Color.lerp(
+                  const Color(0xFFF6B8CF),
+                  Colors.white,
+                  _hash(n + 6) * 0.5,
+                )!;
           paint.color = _modulate(base, tint).withValues(alpha: 0.9);
           final w = (leaf ? 7.0 : 5.0) * unit;
           canvas.save();

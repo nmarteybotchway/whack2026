@@ -359,7 +359,7 @@ repaint without rebuilding widgets. `ValleyClock` turns those seconds into:
 | --- | --- | --- |
 | Day/night | `dayLength` 48 s, 65 % daylight | Sun arcs left to right; sky keyed by sun height (night, twilight, golden, morning, noon); moon and twinkling stars at night; land lit through one `ColorFilter` (`BlendMode.modulate`) tint |
 | Seasons | `daysPerSeason` 1 day/night cycle each | Spring blossom and petals, summer greens, autumn amber and falling leaves, winter snow, frosted trees and snowfall; each blends into the next overnight, so every sunrise opens on the next season |
-| Ambient | continuous | Clouds drift and wrap; birds fly by day; trees, crest conifers and grass sway in gusting wind; light streaks flow down the river under the reflected sun or moon |
+| Ambient | continuous | Clouds drift and wrap; birds fly by day; a plane crosses every 75 s (contrail by day, navigation lights at night); two gondolas pass on a cable car up the middle ridge; trees, crest conifers and grass sway in gusting wind; light streaks flow down the river under the reflected sun or moon |
 
 The scene opens just after sunrise in today's season (`ValleySeason.of`,
 northern hemisphere), or `startSeason`. `animate: false`, or the platform's
