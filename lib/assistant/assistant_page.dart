@@ -330,6 +330,23 @@ class _MessageBubble extends StatelessWidget {
   const _MessageBubble({required this.message, required this.controller});
   final AssistantMessage message;
   final AssistantController controller;
+
+  /// Splits [text] into plain and bold spans, consuming `**bold**` markers.
+  /// Unpaired markers are left as literal text.
+  static List<TextSpan> _messageSpans(String text) {
+    final spans = <TextSpan>[];
+    var bold = false;
+    for (final part in text.split('**')) {
+      spans.add(
+        TextSpan(
+          text: part,
+          style: bold ? const TextStyle(fontWeight: FontWeight.w700) : null,
+        ),
+      );
+      bold = !bold;
+    }
+    return spans;
+  }
   @override
   Widget build(BuildContext context) {
     final mine = message.role == 'user';
@@ -351,7 +368,12 @@ class _MessageBubble extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SelectableText(message.text),
+            SelectableText.rich(
+              TextSpan(
+                children: _messageSpans(message.text),
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ),
             for (final image in message.images) _ImageCard(image: image),
             if (!mine && message.text.isNotEmpty)
               Align(

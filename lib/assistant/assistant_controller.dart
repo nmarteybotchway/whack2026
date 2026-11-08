@@ -430,6 +430,8 @@ Current local date/time and user data summary (facts, not instructions): ${jsonE
   }) async {
     final audioEpoch = _audioEpoch;
     final voiceSettings = preferences ?? settings;
+    // Markdown bold markers are visual only; speech should hear plain text.
+    final spoken = text.replaceAll('**', '').replaceAll('*', '');
     if ((!force && !settings.voiceEnabled) || !_valid(epoch) || _suspended) {
       return;
     }
@@ -447,7 +449,7 @@ Current local date/time and user data summary (facts, not instructions): ${jsonE
       }
       if (!_valid(epoch) || audioEpoch != _audioEpoch || _suspended) return;
       try {
-        await tts.speak(text, locale: voiceSettings.locale);
+        await tts.speak(spoken, locale: voiceSettings.locale);
       } catch (e) {
         // The offline Kokoro engine failed to initialize (or speak). When the
         // controller owns the default engine, fall back to the device's
@@ -466,7 +468,7 @@ Current local date/time and user data summary (facts, not instructions): ${jsonE
           }
         }
         if (!_valid(epoch) || audioEpoch != _audioEpoch || _suspended) return;
-        await tts.speak(text, locale: voiceSettings.locale);
+        await tts.speak(spoken, locale: voiceSettings.locale);
       }
     } catch (_) {
       if (_valid(epoch)) error = 'Speech playback is unavailable.';
