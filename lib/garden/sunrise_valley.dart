@@ -22,6 +22,7 @@ class SunriseValley extends StatefulWidget {
     required this.progress,
     this.startSeason,
     this.animate = true,
+    this.onDayNightChanged,
   });
 
   /// 0.0 - 1.0; growth / lushness of the scene.
@@ -32,6 +33,10 @@ class SunriseValley extends StatefulWidget {
 
   /// False freezes the scene at its start (sunrise in [startSeason]).
   final bool animate;
+
+  /// Called whenever the sun crosses the horizon: true at sunrise, false at
+  /// sunset. Lets overlays match their colors to the sky.
+  final ValueChanged<bool>? onDayNightChanged;
 
   @override
   State<SunriseValley> createState() => _SunriseValleyState();
@@ -48,6 +53,10 @@ class _SunriseValleyState extends State<SunriseValley>
   /// time at zero, so this keeps the clock from jumping back.
   late double _base;
 
+  /// Last known day/night state, so [SunriseValley.onDayNightChanged] fires
+  /// only when the sun actually crosses the horizon.
+  bool _lastDay = true;
+
   @override
   void initState() {
     super.initState();
@@ -55,10 +64,19 @@ class _SunriseValleyState extends State<SunriseValley>
       widget.startSeason ?? ValleySeason.of(DateTime.now()),
     );
     _seconds = ValueNotifier(_base);
-    _ticker = createTicker(
-      (elapsed) => _seconds.value = _base + elapsed.inMicroseconds / 1e6,
-    );
+    _lastDay = _clockAt(_base).sunHeight >= 0;
+    _ticker = createTicker((elapsed) {
+      final seconds = _base + elapsed.inMicroseconds / 1e6;
+      _seconds.value = seconds;
+      final day = _clockAt(seconds).sunHeight >= 0;
+      if (day != _lastDay) {
+        _lastDay = day;
+        widget.onDayNightChanged?.call(day);
+      }
+    });
   }
+
+  ValleyClock _clockAt(double seconds) => ValleyClock(seconds);
 
   @override
   void didChangeDependencies() {
