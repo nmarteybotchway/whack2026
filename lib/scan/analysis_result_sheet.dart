@@ -663,6 +663,7 @@ class _RecommendationCardState extends State<_RecommendationCard> {
         }
         final r = snap.data!;
         final theme = Theme.of(context);
+        final hideAlternatives = widget.hideAlternatives || r.alternatives.isEmpty;
         if (r.canBuy) {
           return Card(
             color: theme.colorScheme.primaryContainer,
@@ -713,71 +714,119 @@ class _RecommendationCardState extends State<_RecommendationCard> {
             ),
           );
         }
-        return Card(
-          color: theme.colorScheme.errorContainer,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+        return Column(
+          children: [
+            Card(
+              color: theme.colorScheme.errorContainer,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(
-                      Icons.warning_amber_rounded,
-                      color: theme.colorScheme.onErrorContainer,
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.warning_amber_rounded,
+                          color: theme.colorScheme.onErrorContainer,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Not recommended',
+                          style: theme.textTheme.titleMedium,
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 8),
-                    Text('Not recommended', style: theme.textTheme.titleMedium),
+                    const SizedBox(height: 8),
+                    // One AI summary sentence built from all the reasons; the
+                    // truncated reason list shows while it loads or if the
+                    // summariser is unavailable.
+                    // Personal clashes first (conditions/preferences), then the
+                    // AI one-sentence summary of the full explanation below.
+                    if (_reasons(r) case final reasons when reasons.isNotEmpty)
+                      Text(
+                        reasons.join(' · '),
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    const SizedBox(height: 4),
+                    FutureBuilder<String>(
+                      future: _summaryLine(r),
+                      builder: (context, summarySnap) => Text(
+                        summarySnap.hasData && summarySnap.data!.isNotEmpty
+                            ? summarySnap.data!
+                            : _condense(r.generalInfo ?? ''),
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                    ),
+                    if (r.boostsNutrients.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        _boostText(r).trim(),
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ],
                   ],
                 ),
-                const SizedBox(height: 8),
-                // One AI summary sentence built from all the reasons; the
-                // truncated reason list shows while it loads or if the
-                // summariser is unavailable.
-                // Personal clashes first (conditions/preferences), then the
-                // AI one-sentence summary of the full explanation below.
-                if (_reasons(r) case final reasons when reasons.isNotEmpty)
-                  Text(
-                    reasons.join(' · '),
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                const SizedBox(height: 4),
-                FutureBuilder<String>(
-                  future: _summaryLine(r),
-                  builder: (context, summarySnap) => Text(
-                    summarySnap.hasData && summarySnap.data!.isNotEmpty
-                        ? summarySnap.data!
-                        : _condense(r.generalInfo ?? ''),
-                    style: theme.textTheme.bodyMedium,
-                  ),
-                ),
-                if (r.boostsNutrients.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Text(_boostText(r).trim(), style: theme.textTheme.bodySmall),
-                ],
-                if (!widget.hideAlternatives && r.alternatives.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text('Try instead', style: theme.textTheme.titleSmall),
-                  const SizedBox(height: 4),
-                  for (final alt in r.alternatives.take(3))
-                    Text('• $alt', style: theme.textTheme.bodyMedium),
-                  // Side note: which of the user's low nutrients these
-                  // alternatives together top up.
-                  if (r.alternativeBoostTotal.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      'Together these are also a good source of '
-                      '${r.alternativeBoostTotal.map((n) => n.label).join(', ')}'
-                      ', which your recent diet has been low in.',
-                      style: theme.textTheme.bodySmall,
-                    ),
-                  ],
-                ],
-              ],
+              ),
             ),
-          ),
+            // The healthier-choice path gets its own green card, mirroring
+            // the "safe to buy" styling, so the eye lands on what to do.
+            if (!hideAlternatives) ...[
+              const SizedBox(height: 12),
+              Card(
+                color: theme.colorScheme.primaryContainer,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.eco_outlined,
+                            color: theme.colorScheme.primary,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Try instead',
+                            style: theme.textTheme.titleMedium,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      for (final alt in r.alternatives.take(3))
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.check,
+                                size: 16,
+                                color: theme.colorScheme.primary,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(alt, style: theme.textTheme.bodyMedium),
+                            ],
+                          ),
+                        ),
+                      // Side note: which of the user's low nutrients these
+                      // alternatives together top up.
+                      if (r.alternativeBoostTotal.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          'Together these are also a good source of '
+                          '${r.alternativeBoostTotal.map((n) => n.label).join(', ')}'
+                          ', which your recent diet has been low in.',
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ],
         );
       },
     );

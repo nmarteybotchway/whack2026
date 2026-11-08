@@ -41,11 +41,28 @@ class DuplexSpeechBridge(private val context: Context) :
         const val METHOD_CHANNEL = "sentinel/duplex_speech"
         const val EVENT_CHANNEL = "sentinel/duplex_speech/events"
         private const val SAMPLE_RATE = 16_000
+
+        // The recognition service binds asynchronously after
+        // createSpeechRecognizer; startListening before the bind silently
+        // no-ops, so every session waits for the first recognizer callback.
+        private const val CONNECT_TIMEOUT_MS = 1_500L
+        private const val MAX_CONNECT_ATTEMPTS = 3
     }
+
+    /** A pending start whose result is resolved once the recognizer responds. */
+    private data class StartRequest(
+        val localeTag: String,
+        val result: MethodChannel.Result,
+        val generation: Int,
+    )
 
     private val main = Handler(Looper.getMainLooper())
     private var sink: EventChannel.EventSink? = null
     private var recognizer: SpeechRecognizer? = null
+    private var pendingStart: StartRequest? = null
+    private var connectAttempts = 0
+    private var awaitingRecognizer = false
+    private val connectCheck = Runnable { verifyRecognizerConnected() }
     private var recorder: AudioRecord? = null
     private var aec: AcousticEchoCanceler? = null
     private var noiseSuppressor: NoiseSuppressor? = null
@@ -129,41 +146,118 @@ class DuplexSpeechBridge(private val context: Context) :
             pipeRead = readEnd
             pipeWrite = writeEnd
             val sessionGeneration = generation
-            recognizer = SpeechRecognizer.createSpeechRecognizer(context).also {
-                it.setRecognitionListener(listenerFor(sessionGeneration))
-            }
-            val locale = Locale.forLanguageTag(localeTag)
-            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, locale.toLanguageTag())
-                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-                putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE, readEnd)
-                putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_CHANNEL_COUNT, 1)
-                putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_ENCODING, AudioFormat.ENCODING_PCM_16BIT)
-                putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_SAMPLING_RATE, SAMPLE_RATE)
-                // One recognizer session can emit final segments while the supplied pipe remains open.
-                putExtra(RecognizerIntent.EXTRA_SEGMENTED_SESSION, RecognizerIntent.EXTRA_AUDIO_SOURCE)
-            }
             running.set(true)
             audio.startRecording()
             if (audio.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
                 throw IllegalStateException("Microphone capture did not start.")
             }
             captureThread = Thread({ pumpAudio(audio, writeEnd, sessionGeneration) }, "duplex-pcm-capture").apply { start() }
-            recognizer?.startListening(intent)
-            android.util.Log.i("DuplexSpeech", "Echo-cancelled microphone started for segmented recognition")
-            emit("ready", mapOf(
-                "locale" to locale.toLanguageTag(),
-                "echoCancellation" to (aec?.enabled == true),
-                "noiseSuppression" to (noiseSuppressor?.enabled == true)
-            ))
-            result.success(null)
+            // The recognizer service binds asynchronously; keep the audio pump
+            // running and only feed the recognizer once it is connected.
+            beginRecognizerSession(localeTag, sessionGeneration, result)
         } catch (e: Exception) {
             stop()
             val message = e.message ?: "Could not start external audio recognition."
             emit("error", mapOf("code" to "start_failed", "message" to message))
             result.error("start_failed", message, null)
         }
+    }
+
+    /**
+     * Creates the recognizer and starts listening right away. If the service
+     * bind had not finished, startListening is silently dropped (no callback,
+     * no error), so a watchdog re-issues startListening — and finally rebuilds
+     * the recognizer — until the first recognizer callback proves it is live.
+     */
+    private fun beginRecognizerSession(localeTag: String, sessionGeneration: Int, result: MethodChannel.Result) {
+        if (sessionGeneration != generation) {
+            result.error("cancelled", "Recognition session was replaced.", null)
+            return
+        }
+        val recognizer = SpeechRecognizer.createSpeechRecognizer(context).also {
+            it.setRecognitionListener(listenerFor(sessionGeneration))
+        }
+        this.recognizer = recognizer
+        pendingStart = StartRequest(localeTag, result, sessionGeneration)
+        awaitingRecognizer = true
+        connectAttempts = 1
+        main.postDelayed(connectCheck, CONNECT_TIMEOUT_MS)
+        startListeningOn(localeTag)
+    }
+
+    /** Called from the recognition listener once the service shows life. */
+    private fun recognizerConnected(sessionGeneration: Int) {
+        if (!awaitingRecognizer) return
+        awaitingRecognizer = false
+        main.removeCallbacks(connectCheck)
+        connectAttempts = 0
+        val request = pendingStart ?: return
+        pendingStart = null
+        if (sessionGeneration != request.generation) return
+        emit("ready", mapOf(
+            "locale" to request.localeTag,
+            "echoCancellation" to (aec?.enabled == true),
+            "noiseSuppression" to (noiseSuppressor?.enabled == true)
+        ))
+        request.result.success(null)
+    }
+
+    private fun verifyRecognizerConnected() {
+        if (!awaitingRecognizer) return
+        val request = pendingStart
+        if (request == null) {
+            awaitingRecognizer = false
+            return
+        }
+        if (request.generation != generation) {
+            awaitingRecognizer = false
+            pendingStart = null
+            request.result.error("cancelled", "Recognition session was replaced.", null)
+            return
+        }
+        if (connectAttempts < MAX_CONNECT_ATTEMPTS) {
+            connectAttempts++
+            android.util.Log.w(
+                "DuplexSpeech",
+                "Recognizer silent after start; retrying ($connectAttempts/$MAX_CONNECT_ATTEMPTS)",
+            )
+            if (connectAttempts == MAX_CONNECT_ATTEMPTS) {
+                // Last resort: rebuild the recognizer from scratch.
+                try { recognizer?.destroy() } catch (_: Exception) { }
+                recognizer = SpeechRecognizer.createSpeechRecognizer(context).also {
+                    it.setRecognitionListener(listenerFor(request.generation))
+                }
+            }
+            main.postDelayed(connectCheck, CONNECT_TIMEOUT_MS)
+            // The service is bound by now even if the first startListening was
+            // dropped, so re-issuing it usually connects.
+            startListeningOn(request.localeTag)
+            return
+        }
+        awaitingRecognizer = false
+        pendingStart = null
+        connectAttempts = 0
+        val message = "Android speech recognition service did not connect. Try again in a moment."
+        emit("error", mapOf("code" to "recognizer_unavailable", "message" to message))
+        request.result.error("recognizer_unavailable", message, null)
+    }
+
+    private fun startListeningOn(localeTag: String) {
+        val readEnd = pipeRead ?: return
+        val locale = Locale.forLanguageTag(localeTag)
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, locale.toLanguageTag())
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE, readEnd)
+            putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_CHANNEL_COUNT, 1)
+            putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_ENCODING, AudioFormat.ENCODING_PCM_16BIT)
+            putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_SAMPLING_RATE, SAMPLE_RATE)
+            // One recognizer session can emit final segments while the supplied pipe remains open.
+            putExtra(RecognizerIntent.EXTRA_SEGMENTED_SESSION, RecognizerIntent.EXTRA_AUDIO_SOURCE)
+        }
+        recognizer?.startListening(intent)
+        android.util.Log.i("DuplexSpeech", "Recognizer connected; segmented recognition started")
     }
 
     private fun pumpAudio(audio: AudioRecord, output: ParcelFileDescriptor, sessionGeneration: Int) {
@@ -192,13 +286,24 @@ class DuplexSpeechBridge(private val context: Context) :
 
     private fun listenerFor(sessionGeneration: Int) = object : RecognitionListener {
         private fun current() = sessionGeneration == generation
-        override fun onReadyForSpeech(params: android.os.Bundle?) { if (current()) emit("status", mapOf("status" to "listening", "message" to "Recognizer ready.")) }
-        override fun onBeginningOfSpeech() { if (current()) emit("status", mapOf("status" to "listening", "message" to "Speech detected.")) }
+        override fun onReadyForSpeech(params: android.os.Bundle?) {
+            if (!current()) return
+            recognizerConnected(sessionGeneration)
+            emit("status", mapOf("status" to "listening", "message" to "Recognizer ready."))
+        }
+        override fun onBeginningOfSpeech() {
+            if (!current()) return
+            recognizerConnected(sessionGeneration)
+            emit("status", mapOf("status" to "listening", "message" to "Speech detected."))
+        }
         override fun onRmsChanged(rmsdB: Float) {}
         override fun onBufferReceived(buffer: ByteArray?) {}
         override fun onEndOfSpeech() { if (current()) emit("status", mapOf("status" to "listening", "message" to "Speech segment ended.")) }
         override fun onError(error: Int) {
             if (!current()) return
+            // The very first error may be the only sign the service bound;
+            // treat it as a connection signal before handling it as a failure.
+            recognizerConnected(sessionGeneration)
             if (error == ERROR_NO_MATCH || error == ERROR_SPEECH_TIMEOUT) {
                 emit("status", mapOf("status" to "done", "message" to "No speech recognized."))
                 return
@@ -239,6 +344,11 @@ class DuplexSpeechBridge(private val context: Context) :
         val wasRunning = running.get()
         generation++
         running.set(false)
+        awaitingRecognizer = false
+        main.removeCallbacks(connectCheck)
+        pendingStart?.result?.error("cancelled", "Recognition session was stopped.", null)
+        pendingStart = null
+        connectAttempts = 0
         try { recognizer?.cancel() } catch (_: Exception) { }
         try { recognizer?.destroy() } catch (_: Exception) { }
         recognizer = null
