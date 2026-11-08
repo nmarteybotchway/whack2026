@@ -57,4 +57,25 @@ void main() {
     expect(restored.price, 2.49);
     expect(restored.quantity, 3);
   });
+
+  test('tolerates a tax flag letter after the price', () {
+    final items = parseReceiptItems('MILK 2.49 F\nBREAD 1.19 N\n');
+    expect(items, hasLength(2));
+    expect(items[0].price, 2.49);
+    expect(items[1].price, 1.19);
+  });
+
+  test('reads price glued to the name', () {
+    final items = parseReceiptItems('MILK2.49\n');
+    expect(items.single.name, 'MILK');
+    expect(items.single.price, 2.49);
+  });
+
+  test('reads quantity-at-unit-price lines with a line total', () {
+    final items = parseReceiptItems('YOGHURT 2 @ 1.50 3.00\n');
+    expect(items.single.name, 'YOGHURT');
+    expect(items.single.price, 1.50);
+    expect(items.single.quantity, 2);
+    expect(items.single.lineTotal, closeTo(3.00, 0.001));
+  });
 }

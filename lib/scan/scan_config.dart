@@ -1,13 +1,11 @@
-/// How the scan page feeds camera frames to [CameraAnalysis].
+/// Legacy scan mode setting retained for source compatibility.
 enum ScanMode {
-  /// Every frame from the camera is sent for analysis (frames that arrive
-  /// while an analysis is still running are dropped).
+  /// Legacy mode. ScanPage now captures only on demand.
   stream,
 
-  /// The preview is live, but a frame is only sent when the capture button
-  /// is pressed.
+  /// Capture when requested by the user or assistant.
   button,
 }
 
-/// Compile-time choice of scan mode. Change this and rebuild to switch.
+/// Retained for callers that still read the old compile-time setting.
 const scanMode = ScanMode.button;

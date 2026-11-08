@@ -25,6 +25,115 @@ service cloud.firestore {
             (request.resource.data.heightCm * request.resource.data.heightCm)) + 0.000001
         && request.resource.data.updatedAt == request.time;
     }
+    match /users/{uid} {
+      allow read: if owner(uid);
+      allow create: if owner(uid)
+        && request.resource.data.keys().hasOnly([
+          'religion', 'dietary', 'health_conditions', 'ignored_swap_items', 'updatedAt',
+          'nutrientScore', 'nutrientTotals', 'nutrientUpdatedAt'
+        ])
+        && (!('religion' in request.resource.data) || request.resource.data.religion is list)
+        && (!('dietary' in request.resource.data) || request.resource.data.dietary is list)
+        && (!('health_conditions' in request.resource.data) || request.resource.data.health_conditions is list)
+        && (!('ignored_swap_items' in request.resource.data) || (request.resource.data.ignored_swap_items is list && request.resource.data.ignored_swap_items.size() <= 500))
+        && (!('nutrientScore' in request.resource.data) || (request.resource.data.nutrientScore is number && request.resource.data.nutrientScore >= 0 && request.resource.data.nutrientScore <= 1))
+        && (!('nutrientTotals' in request.resource.data) || request.resource.data.nutrientTotals is map)
+        && (!('nutrientUpdatedAt' in request.resource.data) || request.resource.data.nutrientUpdatedAt == request.time)
+        && (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt == request.time);
+      allow update: if owner(uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'religion', 'dietary', 'health_conditions', 'ignored_swap_items', 'updatedAt',
+          'nutrientScore', 'nutrientTotals', 'nutrientUpdatedAt'
+        ])
+        && (!('religion' in request.resource.data) || request.resource.data.religion is list)
+        && (!('dietary' in request.resource.data) || request.resource.data.dietary is list)
+        && (!('health_conditions' in request.resource.data) || request.resource.data.health_conditions is list)
+        && (!('ignored_swap_items' in request.resource.data) || (request.resource.data.ignored_swap_items is list && request.resource.data.ignored_swap_items.size() <= 500))
+        && (!('nutrientScore' in request.resource.data) || (request.resource.data.nutrientScore is number && request.resource.data.nutrientScore >= 0 && request.resource.data.nutrientScore <= 1))
+        && (!('nutrientTotals' in request.resource.data) || request.resource.data.nutrientTotals is map)
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['nutrientUpdatedAt']) || request.resource.data.nutrientUpdatedAt == request.time)
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['updatedAt']) || request.resource.data.updatedAt == request.time);
+    }
+    match /users/{uid}/healthData/{recordId} {
+      allow read, delete: if owner(uid);
+      allow create, update: if owner(uid) && recordId == 'latest'
+        && request.resource.data.keys().hasOnly([
+          'heartRateBpm', 'steps', 'sleepMinutes', 'weightKg',
+          'systolicMmHg', 'diastolicMmHg', 'updatedAt', 'optedIn'
+        ])
+        && (!('heartRateBpm' in request.resource.data) || request.resource.data.heartRateBpm is number)
+        && (!('steps' in request.resource.data) || request.resource.data.steps is number)
+        && (!('sleepMinutes' in request.resource.data) || request.resource.data.sleepMinutes is number)
+        && (!('weightKg' in request.resource.data) || request.resource.data.weightKg is number)
+        && (!('systolicMmHg' in request.resource.data) || request.resource.data.systolicMmHg is number)
+        && (!('diastolicMmHg' in request.resource.data) || request.resource.data.diastolicMmHg is number)
+        && (!('optedIn' in request.resource.data) || request.resource.data.optedIn is bool)
+        && (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt == request.time);
+    }
+    match /users/{uid}/assistantSettings/{settingId} {
+      allow read, delete: if owner(uid);
+      allow create, update: if owner(uid) && settingId == 'preferences'
+        && request.resource.data.keys().hasAll([
+          'schemaVersion', 'name', 'tone', 'answerLength', 'supportive',
+          'humor', 'instructions', 'voiceEnabled', 'locale', 'speechRate',
+          'voiceName', 'updatedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'schemaVersion', 'name', 'tone', 'answerLength', 'supportive',
+          'humor', 'instructions', 'voiceEnabled', 'locale', 'speechRate',
+          'voiceName', 'updatedAt'
+        ])
+        && request.resource.data.schemaVersion == 1
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 40
+        && request.resource.data.tone in ['Friendly coach', 'Calm guide', 'Direct assistant']
+        && request.resource.data.answerLength in ['short', 'balanced', 'detailed']
+        && request.resource.data.supportive is bool
+        && request.resource.data.humor is bool
+        && request.resource.data.instructions is string
+        && request.resource.data.instructions.size() <= 1000
+        && request.resource.data.voiceEnabled is bool
+        && request.resource.data.locale is string
+        && request.resource.data.locale.size() <= 30
+        && request.resource.data.speechRate is number
+        && request.resource.data.speechRate >= 0.2
+        && request.resource.data.speechRate <= 0.8
+        && request.resource.data.voiceName is string
+        && request.resource.data.voiceName.size() <= 100
+        && request.resource.data.updatedAt == request.time;
+    }
+    match /users/{uid}/assistantActions/{actionId} {
+      allow read: if owner(uid);
+      allow create: if owner(uid)
+        && request.resource.data.keys().hasAll(['toolName', 'summary', 'result', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['toolName', 'summary', 'result', 'createdAt'])
+        && request.resource.data.toolName in ['propose_preference_change', 'propose_food_log']
+        && request.resource.data.summary is string
+        && request.resource.data.summary.size() <= 300
+        && request.resource.data.result is map
+        && request.resource.data.createdAt == request.time;
+      allow update, delete: if false;
+    }
+    match /users/{uid}/foodEntries/{entryId} {
+      allow read, delete: if owner(uid);
+      allow create: if owner(uid)
+        && request.resource.data.keys().hasAll([
+          'name', 'localDate', 'localDay', 'kind', 'source', 'createdAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'name', 'localDate', 'localDay', 'kind', 'source', 'createdAt', 'amount'
+        ])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 120
+        && request.resource.data.localDate is timestamp
+        && request.resource.data.localDay is string
+        && request.resource.data.kind in ['eaten', 'purchased']
+        && request.resource.data.source == 'assistant'
+        && request.resource.data.createdAt == request.time
+        && (!('amount' in request.resource.data) || (request.resource.data.amount is string && request.resource.data.amount.size() <= 80));
+      allow update: if false;
+    }
     match /users/{uid}/bloodPressure/{recordId} {
       allow read, delete: if owner(uid);
       allow create, update: if owner(uid)
@@ -49,6 +158,39 @@ service cloud.firestore {
         && request.resource.data.unit == 'mmHg'
         && request.resource.data.provider == 'health_connect';
     }
+    match /food/{foodId} {
+      // Delete is for tool/dedupe_food.dart merging duplicate foods.
+      allow read, delete: if request.auth != null;
+      allow create, update: if request.auth != null
+        && request.resource.data.keys().hasAll([
+          'food', 'alternatives', 'health_conditions', 'personal_prefs',
+          'local_news', 'general_info'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'food', 'alternatives', 'health_conditions', 'personal_prefs',
+          'local_news', 'general_info', 'sources', 'nutrients', 'updatedAt'
+        ])
+        && request.resource.data.food is string
+        && request.resource.data.alternatives is map
+        && request.resource.data.health_conditions is list
+        && request.resource.data.personal_prefs is list
+        && request.resource.data.local_news is string
+        && request.resource.data.general_info is string
+        // Optional: foods stored before sources/nutrients existed have none.
+        && (!('sources' in request.resource.data) || request.resource.data.sources is list)
+        && (!('nutrients' in request.resource.data) || request.resource.data.nutrients is map);
+    }
+    match /food_images/{imageId} {
+      // Written by tool/fill_food_images.dart; url and page are empty when
+      // no image was found.
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null
+        && request.resource.data.keys().hasAll(['name', 'url', 'page'])
+        && request.resource.data.keys().hasOnly(['name', 'url', 'page', 'updatedAt'])
+        && request.resource.data.name is string
+        && request.resource.data.url is string
+        && request.resource.data.page is string;
+    }
     match /users/{uid}/receipts/{receiptId} {
       allow read, delete: if owner(uid);
       allow create, update: if owner(uid)
@@ -60,6 +202,45 @@ service cloud.firestore {
         && request.resource.data.total is number
         && request.resource.data.total >= -100000
         && request.resource.data.total <= 100000;
+    }
+    match /users/{uid}/diet/{dayId} {
+      allow read, delete: if owner(uid);
+      allow create, update: if owner(uid)
+        && request.resource.data.keys().hasAll(['date', 'foods', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(
+          ['date', 'foods', 'updatedAt', 'nutrition', 'items'])
+        && request.resource.data.date is timestamp
+        && (!('items' in request.resource.data) || request.resource.data.items is map)
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.foods is list
+        && request.resource.data.foods.size() <= 500
+        && request.resource.data.foods[0] is string;
+    }
+    // Cache for the AI diet review shown on the history page.
+    match /users/{uid}/dietSummary/{summaryId} {
+      allow read, delete: if owner(uid);
+      allow create, update: if owner(uid)
+        && request.resource.data.keys().hasAll(['summary', 'generatedAt'])
+        && request.resource.data.keys().hasOnly(['summary', 'generatedAt'])
+        && request.resource.data.summary is map
+        && request.resource.data.summary.keys().hasAll(
+          ['rating', 'headline', 'good_points', 'gaps'])
+        && request.resource.data.summary.keys().hasOnly(
+          ['rating', 'headline', 'good_points', 'gaps'])
+        && request.resource.data.summary.rating is string
+        && request.resource.data.summary.headline is string
+        && request.resource.data.summary.headline.size() <= 300
+        && request.resource.data.summary.good_points is list
+        && request.resource.data.summary.good_points.size() <= 20
+        && request.resource.data.summary.gaps is list
+        && request.resource.data.summary.gaps.size() <= 20
+        && request.resource.data.generatedAt == request.time;
+    }
+    match /nutritionCache/{foodName} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null
+        && request.resource.data.keys().hasAll(['nutrition', 'updatedAt'])
+        && request.resource.data.updatedAt == request.time;
     }
   }
 }

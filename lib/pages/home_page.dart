@@ -1,7 +1,11 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../assistant/assistant_controller.dart';
+import '../assistant/assistant_page.dart';
+import '../assistant/assistant_repository.dart';
 import '../diet/diet_history_page.dart';
+import '../garden/nutrient_garden.dart';
 import '../health_data/health_tracking_controller.dart';
 import '../health_data/health_tracking_card.dart';
 import '../scan/scan_page.dart';
@@ -30,17 +34,45 @@ const _leftTabs = [
   _Tab('History', Icons.history_outlined, Icons.history),
 ];
 
-const _rightTabs = [_Tab('Settings', Icons.settings_outlined, Icons.settings)];
+const _rightTabs = [
+  _Tab('Assistant', Icons.chat_bubble_outline, Icons.chat_bubble),
+  _Tab('Settings', Icons.settings_outlined, Icons.settings),
+];
 
 const _tabs = [..._leftTabs, ..._rightTabs];
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   int _index = 0;
+
+  /// Receipt scans finished this session; keys the home tab so its nutrient
+  /// cards reload with the new data.
+  int _scans = 0;
   late final HealthTrackingController _tracking;
+  late final AssistantController _assistant;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _assistant = AssistantController(
+      data: FirestoreAssistantRepository(
+        userId: widget.user.uid,
+        profile: {
+          'displayName': widget.user.displayName,
+          'email': widget.user.email,
+          'isAnonymous': widget.user.isAnonymous,
+          'emailVerified': widget.user.emailVerified,
+          'phoneNumber': widget.user.phoneNumber,
+          'photoURL': widget.user.photoURL,
+          'createdAt': widget.user.metadata.creationTime
+              ?.toUtc()
+              .toIso8601String(),
+          'lastSignInAt': widget.user.metadata.lastSignInTime
+              ?.toUtc()
+              .toIso8601String(),
+        },
+      ),
+    );
     _tracking = HealthTrackingController(widget.user.uid);
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _tracking.initialize();
@@ -52,46 +84,81 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _assistant.dispose();
     _tracking.dispose();
     super.dispose();
   }
 
-  void _scan() {
-    Navigator.of(context)
-        .push(MaterialPageRoute<void>(builder: (_) => const ScanPage()));
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // A microphone permission dialog can make the app briefly inactive.
+    // Stop capture when it actually leaves the foreground, without cancelling
+    // the user's first microphone request while permission is being granted.
+    final interrupted =
+        state == AppLifecycleState.inactive &&
+        !_assistant.requestingMicrophonePermission;
+    if (interrupted ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      _assistant.suspend();
+    }
+  }
+
+  void _selectTab(int index) {
+    if (_index == index) return;
+    if (_index == 2) _assistant.suspend();
+    if (index == 2) _assistant.initialize();
+    setState(() => _index = index);
+  }
+
+  Future<void> _scan() async {
+    await _assistant.suspend();
+    if (!mounted) return;
+    final tab = await Navigator.of(context).push<int>(
+      MaterialPageRoute<int>(
+        builder: (_) =>
+            ScanPage(userId: widget.user.uid, assistant: _assistant),
+      ),
+    );
+    if (!mounted) return;
+    // Returning a tab index means the user tapped a tab on the scan-result
+    // sheet's navigation bar; land them on it. Otherwise treat it as a scan.
+    if (tab != null) {
+      setState(() => _index = tab);
+      return;
+    }
+    setState(() => _scans++);
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: theme.colorScheme.inversePrimary,
-        title: Text(_tabs[_index].label),
-        actions: [
-          IconButton(
-            tooltip: 'Sign out',
-            icon: const Icon(Icons.logout),
-            onPressed: () => FirebaseAuth.instance.signOut(),
-          ),
-        ],
-      ),
+      // The home tab's garden runs edge to edge, behind the status bar and
+      // the bottom bar, so it has no app bar of its own.
+      extendBody: true,
+      extendBodyBehindAppBar: _index == 0,
+      appBar: _index == 0 ? null : AppBar(title: Text(_tabs[_index].label)),
       body: switch (_index) {
-        0 => _HomeTab(user: widget.user),
+        // Keyed by scan count so the nutrient cards reload after a scan.
+        0 => _HomeTab(key: ValueKey(_scans), user: widget.user),
         1 => DietHistoryPage(
           key: ValueKey(widget.user.uid),
           userId: widget.user.uid,
         ),
-        2 => SettingsPage(
+        2 => AssistantPage(controller: _assistant),
+        3 => SettingsPage(
           key: ValueKey(widget.user.uid),
           user: widget.user,
           tracking: _tracking,
+          assistant: _assistant,
         ),
         _ => const SizedBox.shrink(),
       },
       bottomNavigationBar: _BottomBar(
         index: _index,
-        onSelect: (i) => setState(() => _index = i),
+        onSelect: _selectTab,
         onScan: _scan,
       ),
     );
@@ -186,8 +253,8 @@ class _ScanButton extends StatelessWidget {
         heroTag: null,
         tooltip: 'Scan',
         shape: const CircleBorder(),
-        backgroundColor: Colors.green,
-        foregroundColor: Colors.white,
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        foregroundColor: Theme.of(context).colorScheme.onPrimary,
         elevation: 2,
         onPressed: onPressed,
         child: const Icon(Icons.qr_code_scanner, size: 30),
@@ -196,22 +263,66 @@ class _ScanButton extends StatelessWidget {
   }
 }
 
-class _HomeTab extends StatelessWidget {
-  const _HomeTab({required this.user});
+class _HomeTab extends StatefulWidget {
+  const _HomeTab({super.key, required this.user});
 
   final User user;
 
   @override
+  State<_HomeTab> createState() => _HomeTabState();
+}
+
+class _HomeTabState extends State<_HomeTab> {
+  /// Matches the valley's sky: the sun starts up (the scene opens at
+  /// sunrise) and [NutrientGarden.onDayNightChanged] flips this at
+  /// sunset and sunrise.
+  bool _isDay = true;
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final name = user.displayName ?? user.email ?? 'Guest';
-    return ListView(
-      padding: const EdgeInsets.all(16),
+    // Black against the bright daytime sky, white against the night one.
+    final color = _isDay ? Colors.black : Colors.white;
+    const shadow = [Shadow(blurRadius: 8, color: Colors.white54)];
+    return Stack(
+      // Expand to the full tab; otherwise the title Column (the only
+      // non-positioned child) sizes the Stack to the width of its text.
+      fit: StackFit.expand,
       children: [
-        Text('Hi, $name', style: theme.textTheme.headlineSmall),
-        const SizedBox(height: 4),
-        Text('UID: ${user.uid}', style: theme.textTheme.bodySmall),
-        const SizedBox(height: 16),
+        NutrientGarden(
+          key: ValueKey(widget.user.uid),
+          userId: widget.user.uid,
+          onDayNightChanged: (isDay) {
+            if (mounted && _isDay != isDay) setState(() => _isDay = isDay);
+          },
+        ),
+        // Title in the upper part of the middle, clear of the status bar.
+        SafeArea(
+          child: Align(
+            alignment: const Alignment(0, -0.45),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Clean Bite',
+                  style: theme.textTheme.headlineLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: color,
+                    shadows: shadow,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Your health, in one place.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: color.withValues(alpha: .8),
+                    shadows: shadow,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }
