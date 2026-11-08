@@ -338,6 +338,11 @@ extends the body behind the status bar and bottom bar.
 | `insights.isEmpty` | Valley at 0 plus "Scan a receipt to grow your garden" above the bottom bar |
 | Otherwise | Valley at the score |
 
+The default scene maps the score onto `SunriseValley`'s top 30 %
+(`_minLushness` 0.7), so the home screen is never bare: a score of 0 shows a
+well-grown valley and a perfect score the fullest one. "Valley at 0" above
+means that floor.
+
 `SunriseValley(progress:)` is a single `CustomPainter`: sky, sun and moon,
 stars, clouds and birds, layered ridges with mist bands, a meadow, and an
 S-curve river that widens toward the viewer. `progress` drives how many trees
@@ -354,7 +359,7 @@ repaint without rebuilding widgets. `ValleyClock` turns those seconds into:
 | --- | --- | --- |
 | Day/night | `dayLength` 48 s, 65 % daylight | Sun arcs left to right; sky keyed by sun height (night, twilight, golden, morning, noon); moon and twinkling stars at night; land lit through one `ColorFilter` (`BlendMode.modulate`) tint |
 | Seasons | `daysPerSeason` 1 day/night cycle each | Spring blossom and petals, summer greens, autumn amber and falling leaves, winter snow, frosted trees and snowfall; each blends into the next overnight, so every sunrise opens on the next season |
-| Ambient | continuous | Clouds drift and wrap; birds fly by day; trees, crest conifers and grass sway in gusting wind; light streaks flow down the river under the reflected sun or moon |
+| Ambient | continuous | Clouds drift and wrap; birds fly by day; a plane crosses every 75 s (contrail by day, navigation lights at night); two gondolas pass on a cable car up the middle ridge; a hot air balloon drifts across every 2 min (its burner glows at night); a tractor works the meadow, drawn in depth order among the trees, with a headlight beam after dark; trees, crest conifers and grass sway in gusting wind; light streaks flow down the river under the reflected sun or moon |
 
 The scene opens just after sunrise in today's season (`ValleySeason.of`,
 northern hemisphere), or `startSeason`. `animate: false`, or the platform's

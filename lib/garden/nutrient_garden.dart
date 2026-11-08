@@ -86,7 +86,7 @@ class _NutrientGardenState extends State<NutrientGarden> {
           builder: (context, progress, _) =>
               scene?.call(context, progress) ??
               SunriseValley(
-                progress: progress,
+                progress: _minLushness + (1 - _minLushness) * progress,
                 onDayNightChanged: widget.onDayNightChanged,
               ),
         ),
@@ -116,4 +116,9 @@ class _NutrientGardenState extends State<NutrientGarden> {
       ],
     );
   }
+
+  /// The valley's lushness at a score of zero. The home screen always looks
+  /// at least this full; the score grows it the rest of the way.
+  static const _minLushness = 0.7;
 }
+
