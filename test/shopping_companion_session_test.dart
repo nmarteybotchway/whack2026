@@ -42,7 +42,7 @@ void main() {
         settingsLoaded.complete(AssistantSettings(voiceEnabled: voiceEnabled));
         await starting;
         await _flush();
-        expect(tts.spoken, hasLength(voiceEnabled ? 1 : 0));
+        expect(tts.spoken, hasLength(2));
         expect(assistant.messages, hasLength(1));
         await _dispose(companion, assistant);
       }
@@ -65,18 +65,18 @@ void main() {
       await companion.scanning();
       await companion.updateProduct(a);
       await _flush();
-      expect(tts.spoken, hasLength(1));
+      expect(tts.spoken, hasLength(2)); // session greeting + product briefing
 
       await companion.scanning();
       await companion.updateProduct(a);
       await _flush();
-      expect(tts.spoken, hasLength(1));
+      expect(tts.spoken, hasLength(2));
 
       now = now.add(const Duration(seconds: 61));
       await companion.scanning();
       await companion.updateProduct(a);
       await _flush();
-      expect(tts.spoken, hasLength(2));
+      expect(tts.spoken, hasLength(3));
       await _dispose(companion, assistant);
     },
   );
@@ -129,7 +129,10 @@ void main() {
           .map((m) => m.text),
       ['Briefing for B.'],
     );
-    expect(tts.spoken, ['Briefing for B.']);
+    expect(tts.spoken, [
+      'Hi, I’m your shopping companion. Ask me about a product, its ingredients, or suitable alternatives.',
+      'Briefing for B.',
+    ]);
     await _dispose(companion, assistant);
   });
 
@@ -157,7 +160,9 @@ void main() {
       expect(assistant.messages.map((m) => m.text), [
         'Earlier shared message.',
       ]);
-      expect(tts.spoken, isEmpty);
+      expect(tts.spoken, [
+        'Hi, I’m your shopping companion. Ask me about a product, its ingredients, or suitable alternatives.',
+      ]);
       await _dispose(companion, assistant);
     },
   );
@@ -278,11 +283,14 @@ AssistantController _assistant({_Tts? tts, _Data? data}) => AssistantController(
   ai: OpenRouterService(
     apiKey: 'test',
     client: MockClient(
-      (_) async => http.Response(
+      (r) async => http.Response(
         jsonEncode({
           'choices': [
             {
-              'message': {'role': 'assistant', 'content': 'A grounded answer.'},
+              'message': {
+                'role': 'assistant',
+                'content': _modelReply(r, 'A grounded answer.'),
+              },
             },
           ],
         }),
@@ -319,6 +327,7 @@ ProductBriefing _brief(ProductIdentification p) => ProductBriefing(
   key: productKeyFor(p),
   name: p.displayName,
   text: 'Briefing for ${p.productName}.',
+  facts: {'say': 'Briefing for ${p.productName}.'},
 );
 
 Future<void> _flush() async {
@@ -334,4 +343,19 @@ Future<void> _dispose(
   companion.dispose();
   await assistant.stopAudio();
   assistant.dispose();
+}
+
+/// Mock model reply: answers a scan reaction with the assessment's test-only
+/// `say` field, proving the assessment reached the prompt.
+String _modelReply(http.BaseRequest request, String fallback) {
+  final messages =
+      (jsonDecode((request as http.Request).body) as Map)['messages'] as List;
+  final last = messages.last as Map;
+  if (last['role'] != 'user' ||
+      !'${last['content']}'.startsWith('I just scanned this')) {
+    return fallback;
+  }
+  final say = RegExp(r'"say":"([^"]*)"')
+      .firstMatch('${(messages.first as Map)['content']}');
+  return say?.group(1) ?? fallback;
 }

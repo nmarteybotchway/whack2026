@@ -116,7 +116,163 @@ class FakeTts extends TextToSpeechService {
 http.Response _json(Map<String, Object?> body) =>
     http.Response(jsonEncode(body), 200);
 
+class ControlledLiveTts extends FakeTts {
+  void Function()? started;
+  final finished = Completer<void>();
+  @override
+  Future<void> speakWithProgress(
+    String text, {
+    String? locale,
+    required void Function() onPlaybackStarted,
+  }) async {
+    speaks++;
+    started = onPlaybackStarted;
+    await finished.future;
+  }
+
+  @override
+  Future<void> stop() async {
+    if (started != null && !finished.isCompleted) finished.complete();
+  }
+}
+
+class OrderedSpeech extends FakeSpeech {
+  Completer<void>? firstListenGate;
+  Completer<void>? stopDelay;
+  int cancels = 0;
+  @override
+  Future<bool> listen({
+    required void Function(String, bool) onResult,
+    void Function(String)? onStatus,
+    String locale = 'en-GB',
+  }) async {
+    listens++;
+    if (listens == 1) await firstListenGate?.future;
+    return true;
+  }
+
+  @override
+  Future<void> stop() async {
+    await stopDelay?.future;
+  }
+
+  @override
+  Future<void> cancel() async {
+    cancels++;
+  }
+}
+
 void main() {
+  test('a late microphone start does not cancel a newer listener', () async {
+    final speech = OrderedSpeech()..firstListenGate = Completer<void>();
+    final c = AssistantController(
+      data: FakeData(),
+      speech: speech,
+      tts: FakeTts(),
+    );
+    final old = c.startListening((_) {});
+    while (speech.listens == 0) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    await c.stopListening();
+    await c.startListening((_) {});
+    speech.firstListenGate!.complete();
+    await old;
+    expect(speech.cancels, 0);
+    expect(c.listening, isTrue);
+    c.dispose();
+  });
+  test(
+    'a late microphone stop does not clear a newer listening state',
+    () async {
+      final speech = OrderedSpeech();
+      final c = AssistantController(
+        data: FakeData(),
+        speech: speech,
+        tts: FakeTts(),
+      );
+      await c.startListening((_) {});
+      speech.stopDelay = Completer<void>();
+      final stop = c.stopListening();
+      await c.startListening((_) {});
+      speech.stopDelay!.complete();
+      await stop;
+      expect(c.listening, isTrue);
+      speech.stopDelay = null;
+      c.dispose();
+    },
+  );
+  test(
+    'replay cancelled during audio teardown cannot start speaking later',
+    () async {
+      final tts = FakeTts()..stopGate = Completer<void>();
+      final c = AssistantController(
+        data: FakeData(),
+        speech: FakeSpeech(),
+        tts: tts,
+      );
+      final replay = c.replay('Do not speak this after stop.');
+      await Future<void>.delayed(Duration.zero);
+      final stop = c.stopAudio();
+      tts.stopGate!.complete();
+      await Future.wait([replay, stop]);
+      expect(tts.speaks, 0);
+      expect(c.speaking, isFalse);
+      tts.stopGate = null;
+      c.dispose();
+    },
+  );
+
+  test(
+    'live speech uses its own fast engine and reports actual playback start',
+    () async {
+      final chatVoice = FakeTts();
+      final liveVoice = ControlledLiveTts();
+      final c = AssistantController(
+        data: FakeData(),
+        speech: FakeSpeech(),
+        tts: chatVoice,
+        liveTts: liveVoice,
+      );
+      final speaking = c.speakSession('Hello from the live companion.');
+      while (liveVoice.started == null) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(c.preparingSpeech, isTrue);
+      expect(chatVoice.speaks, 0);
+      liveVoice.started!();
+      expect(c.preparingSpeech, isFalse);
+      expect(c.speaking, isTrue);
+      liveVoice.finished.complete();
+      await speaking;
+      expect(c.speaking, isFalse);
+      c.dispose();
+    },
+  );
+
+  test(
+    'live playback failure is visible and never leaves speech pending',
+    () async {
+      final liveVoice = ControlledLiveTts();
+      final c = AssistantController(
+        data: FakeData(),
+        speech: FakeSpeech(),
+        tts: FakeTts(),
+        liveTts: liveVoice,
+      );
+      final speaking = c.speakSession('Hello.');
+      while (liveVoice.started == null) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      liveVoice.finished.completeError(StateError('engine failed'));
+      await speaking;
+      expect(c.speechError, isNotNull);
+      expect(c.speaking, isFalse);
+      expect(c.preparingSpeech, isFalse);
+      c.dispose();
+    },
+  );
+
   test('clearing during settings load cancels the original send', () async {
     final data = DelayedSettingsData();
     var requests = 0;
@@ -152,6 +308,13 @@ void main() {
       client: MockClient((request) async {
         requestNo++;
         final sent = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(
+          (sent['tools'] as List).any(
+            (tool) =>
+                (tool as Map)['function']?['name'] == 'request_camera_photo',
+          ),
+          isFalse,
+        );
         if (requestNo == 1) {
           expect(sent['messages'].last['content'], 'What is my diet?');
           return _json({
@@ -193,6 +356,81 @@ void main() {
     c.dispose();
     ai.close();
   });
+
+  test(
+    'companion can request a fresh camera photo and continue its answer',
+    () async {
+      var requestNo = 0;
+      var captures = 0;
+      final ai = OpenRouterService(
+        apiKey: 'test',
+        client: MockClient((request) async {
+          requestNo++;
+          final sent = jsonDecode(request.body) as Map<String, dynamic>;
+          final messages = sent['messages'] as List<dynamic>;
+          final tools = sent['tools'] as List<dynamic>;
+          expect(
+            (messages.first as Map)['content'],
+            contains('Do not capture for general questions'),
+          );
+          expect(
+            tools.any(
+              (tool) =>
+                  (tool as Map)['function']?['name'] == 'request_camera_photo',
+            ),
+            isTrue,
+          );
+          if (requestNo == 1) {
+            return _json({
+              'choices': [
+                {
+                  'message': {
+                    'role': 'assistant',
+                    'content': null,
+                    'tool_calls': [
+                      {
+                        'id': 'camera_1',
+                        'type': 'function',
+                        'function': {
+                          'name': 'request_camera_photo',
+                          'arguments': '{}',
+                        },
+                      },
+                    ],
+                  },
+                },
+              ],
+            });
+          }
+          final photoResult = messages.last as Map<String, dynamic>;
+          expect(photoResult['tool_call_id'], 'camera_1');
+          expect(jsonDecode(photoResult['content'])['name'], 'Oat biscuits');
+          return _json({
+            'choices': [
+              {
+                'message': {
+                  'role': 'assistant',
+                  'content': 'I can see oat biscuits now.',
+                },
+              },
+            ],
+          });
+        }),
+      );
+      final controller = AssistantController(data: FakeData(), ai: ai);
+      controller.setCameraPhotoRequester(() async {
+        captures++;
+        return {'available': true, 'name': 'Oat biscuits'};
+      });
+
+      await controller.sendCompanion('What is this product?');
+
+      expect(captures, 1);
+      expect(controller.messages.last.text, 'I can see oat biscuits now.');
+      controller.dispose();
+      ai.close();
+    },
+  );
 
   test('clear ignores a late tool result', () async {
     final delayed = Completer<AssistantToolResult>();

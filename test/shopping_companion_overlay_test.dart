@@ -6,6 +6,7 @@ import 'package:hackathon/scan/product_identification_service.dart';
 import 'package:hackathon/scan/shopping_companion_briefing.dart';
 import 'package:hackathon/scan/shopping_companion_controller.dart';
 import 'package:hackathon/scan/shopping_companion_overlay.dart';
+import 'package:hackathon/services/speech_to_text_service.dart';
 import 'package:hackathon/services/text_to_speech_service.dart';
 
 class _Data implements AssistantDataSource {
@@ -39,6 +40,27 @@ class _FakeTts extends TextToSpeechService {
   Future<void> setSpeechRate(double rate) async {}
 }
 
+class _FakeSpeech extends SpeechToTextService {
+  @override
+  bool get isAvailable => true;
+
+  @override
+  Future<bool> initialize({void Function(String)? onError}) async => true;
+
+  @override
+  Future<bool> listen({
+    required void Function(String text, bool finalResult) onResult,
+    void Function(String status)? onStatus,
+    String locale = 'en-GB',
+  }) async => true;
+
+  @override
+  Future<void> stop() async {}
+
+  @override
+  Future<void> cancel() async {}
+}
+
 ProductIdentification _product() => const ProductIdentification(
   status: 'identified',
   productName: 'Porridge oats',
@@ -60,7 +82,11 @@ ProductIdentification _product() => const ProductIdentification(
 ShoppingCompanionController _coordinator({
   ProductBriefing Function(ProductIdentification)? briefing,
 }) {
-  final assistant = AssistantController(data: _Data(), tts: _FakeTts());
+  final assistant = AssistantController(
+    data: _Data(),
+    speech: _FakeSpeech(),
+    tts: _FakeTts(),
+  );
   return ShoppingCompanionController(
     assistant: assistant,
     briefingLoader: (product) async =>
@@ -86,6 +112,40 @@ ShoppingCompanionController _coordinator({
 }
 
 void main() {
+  testWidgets(
+    'answer and voice status stays visible while microphone is open',
+    (tester) async {
+      final coordinator = _coordinator();
+      await coordinator.start();
+      coordinator.assistant.listening = true;
+      coordinator.assistant.busy = true;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ShoppingCompanionOverlay(controller: coordinator),
+          ),
+        ),
+      );
+      expect(find.text('Working on your answer…'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      coordinator.assistant.busy = false;
+      coordinator.assistant.speaking = true;
+      coordinator.assistant.preparingSpeech = true;
+      coordinator.setDraft('');
+      await tester.pump();
+      expect(find.text('Preparing voice…'), findsOneWidget);
+      coordinator.assistant.preparingSpeech = false;
+      coordinator.setDraft('');
+      await tester.pump();
+      expect(find.text('Speaking — tap mic to interrupt'), findsOneWidget);
+      expect(find.byKey(const ValueKey('companion-mic')), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+      await coordinator.stop();
+      coordinator.dispose();
+      coordinator.assistant.dispose();
+    },
+  );
+
   testWidgets('starts explicitly and waits for a scan before questions', (
     tester,
   ) async {
@@ -95,15 +155,15 @@ void main() {
         home: Scaffold(body: ShoppingCompanionOverlay(controller: coordinator)),
       ),
     );
-    expect(find.text('Shopping companion'), findsOneWidget);
-    expect(find.text('Start'), findsOneWidget);
+    expect(find.text('Voice shopping companion'), findsOneWidget);
+    expect(find.text('Start voice chat'), findsOneWidget);
 
-    await tester.tap(find.text('Start'));
+    await tester.tap(find.text('Start voice chat'));
     await tester.pumpAndSettle();
-    expect(find.text('Shopping companion active'), findsOneWidget);
+    expect(find.text('Listening — speak naturally'), findsOneWidget);
     expect(
       find.text(
-        'Ask a general question now, or scan a product for a tailored briefing.',
+        'Talk naturally to ask a question. Scan a product for a tailored briefing.',
       ),
       findsOneWidget,
     );
@@ -122,10 +182,41 @@ void main() {
           .onPressed,
       isNull,
     );
+    expect(find.byKey(const ValueKey('companion-mic')), findsOneWidget);
+    expect(find.byTooltip('Stop shopping companion'), findsOneWidget);
+    await tester.tap(find.byTooltip('Collapse companion'));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('companion-mic')), findsOneWidget);
+    expect(find.byTooltip('Stop shopping companion'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox());
-    coordinator.assistant.dispose();
+    await coordinator.stop();
     coordinator.dispose();
+    coordinator.assistant.dispose();
+  });
+
+  testWidgets('speech failure offers a visible retry while collapsed', (
+    tester,
+  ) async {
+    final coordinator = _coordinator();
+    await coordinator.start();
+    coordinator.assistant.speechError = 'Speech output failed';
+    coordinator.setDraft('');
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: ShoppingCompanionOverlay(controller: coordinator)),
+      ),
+    );
+
+    expect(find.text('Speech output failed'), findsOneWidget);
+    expect(find.text('Retry speech'), findsOneWidget);
+    expect(find.byKey(const ValueKey('companion-mic')), findsOneWidget);
+    expect(find.byTooltip('Stop shopping companion'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox());
+    await coordinator.stop();
+    coordinator.dispose();
+    coordinator.assistant.dispose();
   });
 
   testWidgets('shows briefing, alternatives, reply and scan details action', (
@@ -150,18 +241,24 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('North Farm Porridge oats 500 g'), findsOneWidget);
-    expect(find.text('Buckwheat flakes'), findsNWidgets(2));
+    // No model is reachable here, so the fallback wording is the reply and
+    // the alternative is shown once, on the product card.
+    expect(find.text('Buckwheat flakes'), findsOneWidget);
     expect(find.text('A suitable grain-free option.'), findsOneWidget);
     expect(
-      find.text('This scanned food matches porridge oats.'),
+      find.textContaining(
+        'This scanned food matches porridge oats.',
+        findRichText: true,
+      ),
       findsOneWidget,
     );
     await tester.tap(find.byTooltip('Show scan details'));
     expect(detailsOpened, isTrue);
 
     await tester.pumpWidget(const SizedBox());
-    coordinator.assistant.dispose();
+    await coordinator.stop();
     coordinator.dispose();
+    coordinator.assistant.dispose();
   });
 
   testWidgets('panel content scrolls within a small keyboard camera view', (
@@ -239,8 +336,9 @@ void main() {
     );
 
     await tester.pumpWidget(const SizedBox());
-    coordinator.assistant.dispose();
+    await coordinator.stop();
     coordinator.dispose();
+    coordinator.assistant.dispose();
     tester.view.resetPhysicalSize();
     tester.view.resetDevicePixelRatio();
     tester.view.resetViewInsets();

@@ -10,26 +10,21 @@ import '../food/food_recommendation_service.dart';
 import '../food_news.dart';
 import 'analysis_result_sheet.dart';
 import 'camera_analysis.dart';
-import 'frame_gate.dart';
-import 'scan_config.dart';
 import 'shopping_companion_briefing.dart';
 import 'shopping_companion_controller.dart';
 import 'shopping_companion_overlay.dart';
 
 /// Full-screen camera page for photographing and identifying packaged items.
 ///
-/// In [ScanMode.stream] the preview frames go through a [FrameGate], and a
-/// photo is sent automatically once an item has been held steady for a
-/// second. The capture button works in both modes.
+/// Photos are captured on demand from the capture button or assistant.
 class ScanPage extends StatefulWidget {
   const ScanPage({super.key, this.userId, this.demo = false, this.assistant});
 
   final String? userId;
   final AssistantController? assistant;
 
-  /// Test the auto-capture without spending API calls: the stream always
-  /// runs, a capture just flashes the screen red, and the gate's numbers are
-  /// shown on screen.
+  /// Retained for source compatibility with the old gate demo route.
+  @Deprecated('ScanPage now captures only on demand.')
   final bool demo;
 
   /// The camera is supported on Android and iOS.
@@ -51,38 +46,17 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
   DateTime? _lastScanAt;
   bool _companionWasActive = false;
   bool _showingDetails = false;
+  bool _assistantProductUpdatePending = false;
   int _foregroundEpoch = 0;
-  Future<void> _streamSync = Future<void>.value();
 
   /// True while a still photo is being analysed.
   bool _analysing = false;
-
-  final _gate = FrameGate();
-  final _clock = Stopwatch()..start();
-  GateStatus _gateStatus = const GateStatus(GateState.warmingUp);
-
-  /// When the last streamed frame was checked; frames are checked at most
-  /// every [_frameInterval] to keep the gate cheap.
-  Duration _lastFrameAt = Duration.zero;
-  static const _frameInterval = Duration(milliseconds: 100);
-
-  /// Demo mode: true while the red flash is showing, and how many captures
-  /// have fired.
-  bool _flashing = false;
-  int _demoCaptures = 0;
-
-  bool get _streaming =>
-      widget.demo ||
-      scanMode == ScanMode.stream ||
-      (_companion?.active ?? false);
 
   bool get _interactionBusy {
     final companion = _companion;
     return companion != null &&
         companion.active &&
-        (companion.listening ||
-            companion.committing ||
-            companion.pendingAction != null);
+        (companion.committing || companion.pendingAction != null);
   }
 
   @override
@@ -90,12 +64,15 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     final assistant = widget.assistant;
+    assistant?.setCameraPhotoRequester(_requestCameraPhoto);
+    assistant?.addListener(_onAssistantChanged);
     final userId = widget.userId;
-    if (assistant != null && userId != null && !widget.demo) {
+    if (assistant != null && userId != null) {
       final briefings = ProductBriefingService(userId: userId);
       _companion = ShoppingCompanionController(
         assistant: assistant,
         briefingLoader: briefings.describe,
+        onShowDetails: _showDetails,
       )..addListener(_onCompanionChanged);
     }
     if (ScanPage.isSupported) _startCamera();
@@ -106,6 +83,8 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _companion?.removeListener(_onCompanionChanged);
     _companion?.dispose();
+    widget.assistant?.removeListener(_onAssistantChanged);
+    widget.assistant?.setCameraPhotoRequester(null);
     widget.assistant?.suspend();
     _stopCamera();
     super.dispose();
@@ -141,19 +120,6 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
     final active = _companion?.active ?? false;
     if (active != _companionWasActive) {
       _companionWasActive = active;
-      _gate.reset();
-      _streamSync = _streamSync.then((_) async {
-        if (!mounted) return;
-        try {
-          if (_streaming && !_analysing && !_showingDetails) {
-            await _startStream();
-          } else {
-            await _stopStream();
-          }
-        } on CameraException {
-          // Manual capture remains available if preview streaming cannot start.
-        }
-      });
       if (active && _lastResult?.identification != null) {
         unawaited(
           _companion!.updateProduct(
@@ -164,6 +130,17 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
       }
     }
     setState(() {});
+  }
+
+  void _onAssistantChanged() {
+    final companion = _companion;
+    final result = _lastResult?.identification;
+    if (_assistantProductUpdatePending &&
+        !(widget.assistant?.busy ?? false) &&
+        companion?.active == true) {
+      _assistantProductUpdatePending = false;
+      unawaited(companion!.updateProduct(result, scannedAt: _lastScanAt));
+    }
   }
 
   Future<void> _startCamera() async {
@@ -191,8 +168,6 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
         _analysis = analysis;
         _error = null;
       });
-      _gate.reset();
-      await _startStream();
     } catch (e) {
       // A newer start (or dispose) has replaced this controller; ignore.
       if (_controller != controller) return;
@@ -207,62 +182,6 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _startStream() async {
-    final controller = _controller;
-    if (!_streaming ||
-        controller == null ||
-        !controller.value.isInitialized ||
-        controller.value.isStreamingImages) {
-      return;
-    }
-    await controller.startImageStream(_onFrame);
-  }
-
-  Future<void> _stopStream() async {
-    final controller = _controller;
-    if (controller != null && controller.value.isStreamingImages) {
-      await controller.stopImageStream();
-    }
-  }
-
-  void _onFrame(CameraImage frame) {
-    final companion = _companion;
-    if (_analysing ||
-        _showingDetails ||
-        (companion != null &&
-            companion.active &&
-            (companion.loading ||
-                companion.busy ||
-                companion.listening ||
-                companion.speaking ||
-                companion.draft.trim().isNotEmpty ||
-                companion.pendingAction != null))) {
-      return;
-    }
-    final now = _clock.elapsed;
-    if (now - _lastFrameAt < _frameInterval) return;
-    _lastFrameAt = now;
-
-    // Android streams YUV, whose first plane is brightness; iOS streams BGRA,
-    // where green is a good stand-in for brightness.
-    final plane = frame.planes.first;
-    final isBgra = frame.format.group == ImageFormatGroup.bgra8888;
-    final status = _gate.addFrame(
-      plane.bytes,
-      width: frame.width,
-      height: frame.height,
-      rowStride: plane.bytesPerRow,
-      pixelStride: isBgra ? 4 : (plane.bytesPerPixel ?? 1),
-      channelOffset: isBgra ? 1 : 0,
-      timestamp: now,
-    );
-    if (kDebugMode && status.state != _gateStatus.state) {
-      debugPrint('FrameGate: $status');
-    }
-    if (mounted) setState(() => _gateStatus = status);
-    if (status.state == GateState.ready) _capture();
-  }
-
   void _stopCamera() {
     _controller?.dispose();
     _controller = null;
@@ -270,8 +189,14 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
     _analysis = null;
   }
 
-  Future<void> _capture() async {
-    if (widget.demo) return _flash();
+  void _captureFromButton() {
+    unawaited(_capture().then<void>((_) {}));
+  }
+
+  Future<Map<String, Object?>> _requestCameraPhoto() =>
+      _capture(fromAssistant: true);
+
+  Future<Map<String, Object?>> _capture({bool fromAssistant = false}) async {
     final controller = _controller;
     final analysis = _analysis;
     if (controller == null ||
@@ -279,24 +204,24 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
         _analysing ||
         _showingDetails ||
         _interactionBusy) {
-      return;
+      return {'available': false, 'error': 'Camera is busy or unavailable.'};
     }
     _analysing = true;
     final scannedAt = DateTime.now().toUtc();
     setState(() {});
-    await _companion?.scanning();
+    if (!fromAssistant) await _companion?.scanning();
     if (!mounted || _controller != controller) {
       _analysing = false;
-      return;
+      return {'available': false, 'error': 'Camera is no longer available.'};
     }
-    widget.assistant?.setCurrentProduct({
-      'status': 'scanning',
-      'scannedAt': DateTime.now().toUtc().toIso8601String(),
-    });
+    if (!fromAssistant) {
+      widget.assistant?.setCurrentProduct({
+        'status': 'scanning',
+        'scannedAt': DateTime.now().toUtc().toIso8601String(),
+      });
+    }
     AnalysisResult result;
     try {
-      // Android cannot take a picture while streaming preview frames.
-      await _stopStream();
       final photo = await controller.takePicture();
       result = await analysis.analyse(await photo.readAsBytes());
     } catch (error) {
@@ -305,8 +230,6 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
         error: 'Could not identify this photo. Check your connection and try again.',
       );
     } finally {
-      // Start the cooldown from the answer, not from when the frame passed.
-      _gate.startCooldown(_clock.elapsed);
       _analysing = false;
       if (mounted) setState(() {});
     }
@@ -315,10 +238,42 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
       _lastResult = result;
       _lastScanAt = scannedAt;
       final product = result.identification;
-      widget.assistant?.setCurrentProduct({
-        'status': product?.status ?? 'unavailable',
+      if (!fromAssistant) {
+        widget.assistant?.setCurrentProduct({
+          'status': product?.status ?? 'unavailable',
+          'scannedAt': scannedAt.toIso8601String(),
+          if (product != null) ...{
+            'name': product.displayName,
+            'productName': product.productName,
+            'brand': product.brand,
+            'variant': product.variant,
+            'packageSize': product.packageSize,
+            'gtin': product.gtin,
+            'catalogProductId': product.catalogProductId,
+            'confidence': product.confidence,
+            'evidence': product.evidence,
+            'uncertainties': product.uncertainties,
+          },
+          if (result.error != null) 'error': result.error,
+        });
+      }
+      Map<String, Object?>? assessment;
+      if (fromAssistant && (_companion?.active ?? false)) {
+        // Keep the assistant's tool turn alive. Applying this product to the
+        // companion is deferred until that turn finishes because a new
+        // product normally cancels an in-flight companion turn.
+        _assistantProductUpdatePending = true;
+        if (product != null) assessment = await _companion!.assess(product);
+      } else if (_companion?.active ?? false) {
+        unawaited(_companion!.updateProduct(product, scannedAt: scannedAt));
+      } else if (!fromAssistant) {
+        await _showResult(result);
+      }
+      return {
+        'available': product != null,
         'scannedAt': scannedAt.toIso8601String(),
         if (product != null) ...{
+          'status': product.status,
           'name': product.displayName,
           'productName': product.productName,
           'brand': product.brand,
@@ -330,15 +285,11 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
           'evidence': product.evidence,
           'uncertainties': product.uncertainties,
         },
+        'assessment': ?assessment,
         if (result.error != null) 'error': result.error,
-      });
-      if (_companion?.active ?? false) {
-        unawaited(_companion!.updateProduct(product, scannedAt: scannedAt));
-      } else {
-        if (await _showResult(result)) return;
-      }
+      };
     }
-    if (mounted && _controller == controller) await _startStream();
+    return {'available': false, 'error': 'Camera is no longer available.'};
   }
 
   Future<bool> _showResult(AnalysisResult result) async {
@@ -366,8 +317,6 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
     final foregroundEpoch = _foregroundEpoch;
     _showingDetails = true;
     await _companion?.pause();
-    await _streamSync;
-    await _stopStream();
     if (!mounted) return;
     final leaving = await _showResult(result);
     _showingDetails = false;
@@ -377,15 +326,12 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
         WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
       await _companion?.start();
     }
-    if (mounted && _streaming) await _startStream();
   }
 
   Future<void> _openAssistant() async {
     final assistant = widget.assistant;
     if (assistant == null || _analysing) return;
     await _companion?.pause();
-    await _streamSync;
-    await _stopStream();
     await assistant.initialize();
     if (!mounted) return;
     await Navigator.of(context).push(
@@ -397,18 +343,6 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
       ),
     );
     await assistant.suspend();
-    if (mounted) await _startStream();
-  }
-
-  /// Demo stand-in for an API call: flash red and start the cooldown.
-  Future<void> _flash() async {
-    _gate.startCooldown(_clock.elapsed);
-    setState(() {
-      _flashing = true;
-      _demoCaptures++;
-    });
-    await Future<void>.delayed(const Duration(milliseconds: 250));
-    if (mounted) setState(() => _flashing = false);
   }
 
   @override
@@ -418,7 +352,7 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
-        title: Text(widget.demo ? 'Scan gate demo' : 'Scan'),
+        title: const Text('Scan'),
         actions: [
           if (widget.assistant != null)
             IconButton(
@@ -456,27 +390,6 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
           fit: StackFit.expand,
           children: [
             Center(child: CameraPreview(controller)),
-            IgnorePointer(
-              child: AnimatedOpacity(
-                opacity: _flashing ? 0.6 : 0,
-                duration: const Duration(milliseconds: 120),
-                child: const ColoredBox(color: Colors.red),
-              ),
-            ),
-            if (_streaming)
-              Positioned(
-                left: 16,
-                right: 16,
-                top: 16,
-                child: Center(
-                  child: _GateIndicator(
-                    status: _gateStatus,
-                    busy: _analysing,
-                    showMetrics: kDebugMode || widget.demo,
-                    captures: widget.demo ? _demoCaptures : null,
-                  ),
-                ),
-              ),
             if (_companion case final companion?)
               Positioned(
                 left: 12,
@@ -499,7 +412,7 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
                 child: Center(
                   child: _CaptureButton(
                     busy: _analysing || _interactionBusy,
-                    onPressed: _capture,
+                    onPressed: _captureFromButton,
                   ),
                 ),
               ),
@@ -530,68 +443,6 @@ class _CaptureButton extends StatelessWidget {
             ? const CircularProgressIndicator(color: Colors.white)
             : const Icon(Icons.camera_alt, size: 32),
       ),
-    );
-  }
-}
-
-/// Tells the user what the auto-capture is waiting for.
-class _GateIndicator extends StatelessWidget {
-  const _GateIndicator({
-    required this.status,
-    required this.busy,
-    required this.showMetrics,
-    this.captures,
-  });
-
-  final GateStatus status;
-  final bool busy;
-  final bool showMetrics;
-
-  /// Demo mode: how many captures have fired.
-  final int? captures;
-
-  @override
-  Widget build(BuildContext context) {
-    final label = busy
-        ? 'Identifying…'
-        : switch (status.state) {
-            GateState.warmingUp => 'Starting…',
-            GateState.inPocket => 'Camera covered',
-            GateState.coolingDown => 'Ready again shortly…',
-            GateState.moving => 'Hold the camera steady',
-            GateState.noItem => 'Show an item to the camera',
-            GateState.alreadySent => 'Show another item',
-            GateState.holding || GateState.ready => 'Hold still…',
-          };
-    final showProgress =
-        !busy &&
-        (status.state == GateState.holding ||
-            status.state == GateState.coolingDown);
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Chip(
-          avatar: showProgress
-              ? SizedBox.square(
-                  dimension: 16,
-                  child: CircularProgressIndicator(
-                    value: status.progress,
-                    strokeWidth: 3,
-                  ),
-                )
-              : null,
-          label: Text(label),
-        ),
-        if (showMetrics)
-          Text(
-            [
-              if (captures != null) 'captures=$captures',
-              status.toString(),
-            ].join(' '),
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.white70, fontSize: 11),
-          ),
-      ],
     );
   }
 }
