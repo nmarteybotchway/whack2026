@@ -1,7 +1,7 @@
 # Shopping assistant
 
 The bottom bar has an Assistant destination immediately left of Settings. The
-session is shared with the camera's “Ask about this product” chat entry. It uses
+session is shared with the camera's Shopping companion panel and full-chat entry. It uses
 OpenRouter's `@preset/glm-flash` preset; a live capability check during development
 resolved it to `z-ai/glm-5.3-flash` and returned a valid function call.
 
@@ -20,9 +20,37 @@ resolved it to `z-ai/glm-5.3-flash` and returned a valid function call.
   name, tone, response length, encouragement, humor, instructions and voice.
   Preview produces a sample without executing tools or changing conversation
   history. Preferences are stored per signed-in user.
-- Scan a product and open the camera's chat button to discuss it using the same
-  conversation. This version uses deliberate voice turns; it does not continuously
-  listen while walking or operate in the background.
+- In Scan, tap **Start** on Shopping companion to keep the camera visible while
+  hearing summaries, asking questions and seeing alternative image cards. The
+  app automatically captures a steady product while this mode is enabled.
+  Tap the microphone, review the transcript and send; general questions also
+  work before the first scan. Use **Details** for the original scan sheet or
+  the app-bar chat button to open the full shared conversation.
+- Stop session, backgrounding, or an interruption stops camera companion audio
+  and microphone activity. Resume the companion explicitly. This version does
+  not continuously listen or operate in the background.
+
+## Camera shopping companion
+
+`ShoppingCompanionController` coordinates the existing `AssistantController`
+without creating a second chat session or speech engine. New scans update the
+selected product, invalidate unfinished product-specific model turns, and stop
+old speech. Prior conversation stays available. Product identity uses a GTIN,
+catalog ID, or normalized name/brand/variant/size. Repeat announcements are
+suppressed during a short cooldown; late responses cannot describe the next
+product as if they belonged to it.
+
+`ProductBriefingService` formats a short, deterministic summary from the same
+food recommender used by the result sheet. It includes stored alerts,
+preference/condition conflicts and nutrient information, respects declined
+swaps, and checks candidate alternatives before showing up to three cards.
+Missing catalog/profile evidence is stated explicitly. Images come from
+Firestore metadata and may fail independently of the text summary.
+
+Automatic summaries do not call model tools or save data. Follow-up questions
+use OpenRouter with the user's saved personality and shorter camera replies.
+Proposed writes still require the visible Confirm/Cancel controls. Capture and
+announcements yield while the user listens, types, thinks or confirms an action.
 
 ## Data and execution
 
@@ -84,7 +112,9 @@ still needs an authenticated backend that keeps that key server-side.
 The checked-in Firestore rules include the new profile, health-summary,
 assistant-settings, manual-entry and action-marker paths. They must be deployed
 to the intended Firebase project for those operations to work under these rules;
-implementation and local tests do not deploy them.
+local tests do not deploy them. The reviewed rules were deployed to
+`whack-2026-c7898` during the Shopping companion rollout, including the newer
+remembered-swap and nutrient-garden fields.
 
 Android microphone permission and iOS microphone/speech-recognition purpose
 strings are included. Voice requires a supported device recognizer/TTS engine

@@ -361,8 +361,9 @@ class _NutrientGapsCardState extends State<NutrientGapsCard> {
         builder: (_) => NutrientTrackerPage(userId: widget.userId),
       ),
     );
-    if (mounted)
+    if (mounted) {
       setState(() => _insights = _loadInsights(widget.userId, _maxDays));
+    }
   }
 
   @override

@@ -45,8 +45,11 @@ condition and don't want to read every label.
   proposes preference changes and manual food logs, and nothing is saved
   until the user confirms. Speech-to-text input and text-to-speech replies
   are available. The name, tone, answer length, humour and voice can be
-  customised. The scan page has an "Ask about this product" button that
-  opens the same conversation.
+  customised. Start **Shopping companion** over the camera for steady-product
+  auto-capture, spoken summaries, alternative image cards and voice/text
+  questions without leaving the preview. The app-bar chat button opens the
+  same full conversation. Listening uses explicit microphone turns and stops
+  when the session leaves the foreground.
 - **Health data (Android).** After the user opts in, the app reads heart
   rate, steps, sleep, weight and blood pressure through a native Health
   Connect channel. Blood-pressure records are synced every minute while

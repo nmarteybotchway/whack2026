@@ -92,7 +92,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // A microphone permission dialog can make the app briefly inactive.
     // Stop capture when it actually leaves the foreground, without cancelling
     // the user's first microphone request while permission is being granted.
-    if (state == AppLifecycleState.paused ||
+    final interrupted =
+        state == AppLifecycleState.inactive &&
+        !_assistant.requestingMicrophonePermission;
+    if (interrupted ||
+        state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden ||
         state == AppLifecycleState.detached) {
       _assistant.suspend();

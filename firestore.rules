@@ -29,20 +29,30 @@ service cloud.firestore {
       allow read: if owner(uid);
       allow create: if owner(uid)
         && request.resource.data.keys().hasOnly([
-          'religion', 'dietary', 'health_conditions', 'updatedAt'
+          'religion', 'dietary', 'health_conditions', 'ignored_swap_items', 'updatedAt',
+          'nutrientScore', 'nutrientTotals', 'nutrientUpdatedAt'
         ])
         && (!('religion' in request.resource.data) || request.resource.data.religion is list)
         && (!('dietary' in request.resource.data) || request.resource.data.dietary is list)
         && (!('health_conditions' in request.resource.data) || request.resource.data.health_conditions is list)
+        && (!('ignored_swap_items' in request.resource.data) || (request.resource.data.ignored_swap_items is list && request.resource.data.ignored_swap_items.size() <= 500))
+        && (!('nutrientScore' in request.resource.data) || (request.resource.data.nutrientScore is number && request.resource.data.nutrientScore >= 0 && request.resource.data.nutrientScore <= 1))
+        && (!('nutrientTotals' in request.resource.data) || request.resource.data.nutrientTotals is map)
+        && (!('nutrientUpdatedAt' in request.resource.data) || request.resource.data.nutrientUpdatedAt == request.time)
         && (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt == request.time);
       allow update: if owner(uid)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'religion', 'dietary', 'health_conditions', 'updatedAt'
+          'religion', 'dietary', 'health_conditions', 'ignored_swap_items', 'updatedAt',
+          'nutrientScore', 'nutrientTotals', 'nutrientUpdatedAt'
         ])
         && (!('religion' in request.resource.data) || request.resource.data.religion is list)
         && (!('dietary' in request.resource.data) || request.resource.data.dietary is list)
         && (!('health_conditions' in request.resource.data) || request.resource.data.health_conditions is list)
-        && (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt == request.time);
+        && (!('ignored_swap_items' in request.resource.data) || (request.resource.data.ignored_swap_items is list && request.resource.data.ignored_swap_items.size() <= 500))
+        && (!('nutrientScore' in request.resource.data) || (request.resource.data.nutrientScore is number && request.resource.data.nutrientScore >= 0 && request.resource.data.nutrientScore <= 1))
+        && (!('nutrientTotals' in request.resource.data) || request.resource.data.nutrientTotals is map)
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['nutrientUpdatedAt']) || request.resource.data.nutrientUpdatedAt == request.time)
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['updatedAt']) || request.resource.data.updatedAt == request.time);
     }
     match /users/{uid}/healthData/{recordId} {
       allow read, delete: if owner(uid);
