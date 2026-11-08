@@ -22,6 +22,8 @@ import java.time.Instant
 
 class MainActivity : FlutterFragmentActivity() {
     private val scope = MainScope()
+    private lateinit var duplexSpeechBridge: DuplexSpeechBridge
+    private lateinit var liveVoiceBridge: LiveVoiceBridge
 
     // Read permissions for every record type the app can pull from Health
     // Connect (Samsung Health syncs these automatically).
@@ -68,6 +70,16 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        duplexSpeechBridge = DuplexSpeechBridge(this)
+        liveVoiceBridge = LiveVoiceBridge(this)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, DuplexSpeechBridge.METHOD_CHANNEL)
+            .setMethodCallHandler(duplexSpeechBridge)
+        io.flutter.plugin.common.EventChannel(flutterEngine.dartExecutor.binaryMessenger, DuplexSpeechBridge.EVENT_CHANNEL)
+            .setStreamHandler(duplexSpeechBridge)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, LiveVoiceBridge.METHOD_CHANNEL)
+            .setMethodCallHandler(liveVoiceBridge)
+        io.flutter.plugin.common.EventChannel(flutterEngine.dartExecutor.binaryMessenger, LiveVoiceBridge.EVENT_CHANNEL)
+            .setStreamHandler(liveVoiceBridge)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "sentinel/health_connect")
             .setMethodCallHandler { call, result ->
                 val preferences = getSharedPreferences("sentinel_health", MODE_PRIVATE)
@@ -204,8 +216,21 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     override fun onDestroy() {
+        if (::duplexSpeechBridge.isInitialized) duplexSpeechBridge.stop()
+        if (::liveVoiceBridge.isInitialized) liveVoiceBridge.onMethodCall(MethodCall("dispose", null), object : MethodChannel.Result {
+            override fun success(result: Any?) {}
+            override fun error(errorCode: String, errorMessage: String?, errorDetails: Any?) {}
+            override fun notImplemented() {}
+        })
         scope.cancel()
         pendingPermission = null
         super.onDestroy()
+    }
+
+    override fun onStop() {
+        // This feature is foreground-only; do not keep the microphone open while
+        // the app is backgrounded or the screen is covered by another activity.
+        if (::duplexSpeechBridge.isInitialized) duplexSpeechBridge.stop(notify = true)
+        super.onStop()
     }
 }

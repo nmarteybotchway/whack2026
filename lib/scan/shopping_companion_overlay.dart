@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../assistant/assistant_models.dart';
+import '../assistant/message_spans.dart';
 import 'shopping_companion_briefing.dart';
 import 'shopping_companion_controller.dart';
 
@@ -76,13 +77,8 @@ class _ShoppingCompanionOverlayState extends State<ShoppingCompanionOverlay> {
 
   Future<void> _collapse() async {
     setState(() => _expanded = false);
-    // A collapsed panel should never leave a hidden microphone running.
-    if (widget.controller.listening) {
-      await widget.controller.stopListening();
-    }
-    if (widget.controller.speaking) {
-      await widget.controller.stopSpeech();
-    }
+    // Collapsing only hides the conversation. The session remains active;
+    // the explicit stop control is always available in the header.
   }
 
   Future<void> _submit() async {
@@ -133,30 +129,42 @@ class _ShoppingCompanionOverlayState extends State<ShoppingCompanionOverlay> {
 
   Widget _inactivePanel(ShoppingCompanionController controller) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      child: Row(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Icon(Icons.shopping_bag_outlined),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Shopping companion',
-                  style: TextStyle(fontWeight: FontWeight.w600),
+          Row(
+            children: [
+              const Icon(Icons.shopping_bag_outlined),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'Voice shopping companion',
+                  style: TextStyle(fontWeight: FontWeight.w700),
                 ),
-                if (controller.error != null)
-                  Text(
-                    controller.error!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Colors.white70, fontSize: 11),
-                  ),
-              ],
+              ),
+              if (widget.onShowDetails != null)
+                IconButton(
+                  tooltip: 'Show scan details',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: widget.onShowDetails,
+                  icon: const Icon(Icons.open_in_new_rounded),
+                ),
+            ],
+          ),
+          const Padding(
+            padding: EdgeInsets.only(left: 34, bottom: 10),
+            child: Text(
+              'Get spoken scan summaries and ask questions by voice or text.',
+              style: TextStyle(color: Colors.white70, fontSize: 12),
             ),
           ),
+          if (controller.error != null)
+            _ErrorBanner(
+              message: controller.error!,
+              onRetry: controller.retryBriefing,
+            ),
           FilledButton.icon(
             onPressed: controller.loading ? null : _start,
             icon: controller.loading
@@ -165,7 +173,7 @@ class _ShoppingCompanionOverlayState extends State<ShoppingCompanionOverlay> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.play_arrow_rounded),
-            label: const Text('Start'),
+            label: const Text('Start voice chat'),
           ),
         ],
       ),
@@ -175,13 +183,19 @@ class _ShoppingCompanionOverlayState extends State<ShoppingCompanionOverlay> {
   Widget _activePanel(ShoppingCompanionController controller) {
     final status = widget.scanning
         ? 'Scanning product…'
-        : controller.listening
-        ? 'Listening'
         : controller.busy
-        ? 'Thinking'
+        ? 'Working on your answer…'
+        : controller.loading
+        ? 'Checking product…'
+        : controller.preparingSpeech
+        ? 'Preparing voice…'
         : controller.speaking
-        ? 'Speaking'
-        : 'Shopping companion active';
+        ? 'Speaking — tap mic to interrupt'
+        : controller.listening
+        ? 'Listening — speak naturally'
+        : controller.micPaused
+        ? 'Microphone paused'
+        : 'Voice chat ready';
     final scheme = Theme.of(context).colorScheme;
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -190,14 +204,23 @@ class _ShoppingCompanionOverlayState extends State<ShoppingCompanionOverlay> {
           padding: const EdgeInsets.fromLTRB(14, 8, 6, 6),
           child: Row(
             children: [
-              Icon(
-                controller.listening
-                    ? Icons.mic_rounded
-                    : controller.speaking
-                    ? Icons.volume_up_rounded
-                    : Icons.shopping_bag_outlined,
-                color: scheme.primaryContainer,
-              ),
+              if (widget.scanning ||
+                  controller.busy ||
+                  controller.preparingSpeech ||
+                  controller.loading)
+                const SizedBox.square(
+                  dimension: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else
+                Icon(
+                  controller.listening
+                      ? Icons.mic_rounded
+                      : controller.speaking
+                      ? Icons.volume_up_rounded
+                      : Icons.shopping_bag_outlined,
+                  color: scheme.primaryContainer,
+                ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -207,13 +230,33 @@ class _ShoppingCompanionOverlayState extends State<ShoppingCompanionOverlay> {
                   style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
               ),
-              if (controller.speaking)
-                IconButton(
-                  tooltip: 'Stop speech',
-                  onPressed: controller.stopSpeech,
-                  icon: const Icon(Icons.stop_circle_outlined),
-                ),
               IconButton(
+                key: const ValueKey('companion-mic'),
+                visualDensity: VisualDensity.compact,
+                tooltip:
+                    controller.speaking ||
+                        controller.busy ||
+                        controller.preparingSpeech
+                    ? 'Interrupt and talk'
+                    : controller.micPaused
+                    ? 'Resume microphone'
+                    : 'Pause microphone',
+                onPressed:
+                    controller.speaking ||
+                        controller.busy ||
+                        controller.preparingSpeech
+                    ? controller.interruptAndListen
+                    : controller.micPaused
+                    ? controller.resumeListening
+                    : controller.pauseListening,
+                icon: Icon(
+                  controller.micPaused
+                      ? Icons.mic_off_rounded
+                      : Icons.mic_rounded,
+                ),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
                 tooltip: _expanded ? 'Collapse companion' : 'Expand companion',
                 onPressed: _expanded
                     ? _collapse
@@ -222,6 +265,7 @@ class _ShoppingCompanionOverlayState extends State<ShoppingCompanionOverlay> {
               ),
               if (widget.onShowDetails != null)
                 IconButton(
+                  visualDensity: VisualDensity.compact,
                   tooltip: 'Show scan details',
                   onPressed: widget.onShowDetails,
                   icon: const Icon(Icons.open_in_new_rounded),
@@ -234,6 +278,15 @@ class _ShoppingCompanionOverlayState extends State<ShoppingCompanionOverlay> {
             ],
           ),
         ),
+        if (controller.speechError != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: _ErrorBanner(
+              message: controller.speechError!,
+              onRetry: controller.retrySpeech,
+              retryLabel: 'Retry speech',
+            ),
+          ),
         if (_expanded)
           Flexible(
             child: SingleChildScrollView(
@@ -277,7 +330,7 @@ class _ShoppingCompanionOverlayState extends State<ShoppingCompanionOverlay> {
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 12),
                       child: Text(
-                        'Ask a general question now, or scan a product for a tailored briefing.',
+                        'Talk naturally to ask a question. Scan a product for a tailored briefing.',
                       ),
                     ),
                   _composer(controller),
@@ -290,29 +343,14 @@ class _ShoppingCompanionOverlayState extends State<ShoppingCompanionOverlay> {
   }
 
   Widget _composer(ShoppingCompanionController controller) {
-    final waiting = controller.busy || controller.committing;
+    final waiting =
+        controller.busy || controller.committing || controller.preparingSpeech;
     final canInteract = controller.active && !waiting;
     return Padding(
       padding: const EdgeInsets.only(top: 4),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          IconButton.filledTonal(
-            key: const ValueKey('companion-mic'),
-            tooltip: controller.listening
-                ? 'Stop listening'
-                : 'Speak a question',
-            onPressed: controller.listening
-                ? controller.stopListening
-                : !canInteract
-                ? null
-                : controller.listen,
-            icon: Icon(
-              controller.listening
-                  ? Icons.stop_rounded
-                  : Icons.mic_none_rounded,
-            ),
-          ),
           Expanded(
             child: TextField(
               controller: _draftController,
@@ -383,8 +421,6 @@ class _BriefingCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 5),
-          Text(briefing.text),
           for (final alternative in briefing.alternatives)
             _AlternativeCard(alternative: alternative),
         ],
@@ -491,7 +527,7 @@ class _ReplyCard extends StatelessWidget {
               ),
             ],
           ),
-          SelectableText(reply.text),
+          SelectableText.rich(TextSpan(children: messageSpans(reply.text))),
           for (final image in reply.images)
             _AlternativeCard(
               alternative: CompanionAlternative(name: image.name, image: image),
@@ -552,9 +588,14 @@ class _PendingActionCard extends StatelessWidget {
 }
 
 class _ErrorBanner extends StatelessWidget {
-  const _ErrorBanner({required this.message, required this.onRetry});
+  const _ErrorBanner({
+    required this.message,
+    required this.onRetry,
+    this.retryLabel = 'Retry',
+  });
   final String message;
   final VoidCallback onRetry;
+  final String retryLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -567,7 +608,7 @@ class _ErrorBanner extends StatelessWidget {
             const Icon(Icons.error_outline),
             const SizedBox(width: 8),
             Expanded(child: Text(message)),
-            TextButton(onPressed: onRetry, child: const Text('Retry')),
+            TextButton(onPressed: onRetry, child: Text(retryLabel)),
           ],
         ),
       ),

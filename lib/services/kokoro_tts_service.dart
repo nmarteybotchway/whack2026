@@ -11,6 +11,7 @@ import 'package:piper_phonemize/piper_phonemize.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa_onnx;
 
 import 'text_to_speech_service.dart';
+import 'speech_chunks.dart';
 
 /// Offline neural text-to-speech backed by the bundled Kokoro-82M model.
 ///
@@ -28,6 +29,11 @@ class KokoroTtsService extends TextToSpeechService {
 
   /// Kokoro v0.19 outputs 24 kHz mono float PCM.
   static const int _sampleRate = 24000;
+
+  /// CPU threads for synthesis. Measured on a Snapdragon 8 Gen 3 at 6
+  /// threads: real-time factor ~0.5-0.7 for full sentences, ~1.0 for short
+  /// opening phrases. Beyond 6, work spills onto the efficiency cores.
+  static const int _numThreads = 6;
 
   /// Speaker ID map for kokoro-en-v0_19 (11 built-in voices).
   static const Map<String, int> voiceIds = {
@@ -60,6 +66,13 @@ class KokoroTtsService extends TextToSpeechService {
     'bm_lewis': 'en-GB',
   };
 
+  bool _conversationMode = false;
+
+  @override
+  void setConversationMode(bool enabled) {
+    _conversationMode = enabled;
+  }
+
   int _sid = _defaultSid;
   Object? _initError;
 
@@ -86,11 +99,21 @@ class KokoroTtsService extends TextToSpeechService {
   Future<void> get ready => _ready.future;
 
   /// True once initialization finished successfully.
-  bool get isAvailable => _ready.isCompleted && !_disposed;
+  bool get isAvailable =>
+      _ready.isCompleted && _initError == null && !_disposed;
+
+  Future<void>? _workerInitialization;
+  void Function()? _playbackStarted;
+
+  @override
+  Future<void> prepare() => _ensureWorker();
 
   // ── Initialization ──────────────────────────────────────────────────────
 
-  Future<void> _ensureWorker() async {
+  Future<void> _ensureWorker() => _workerInitialization ??= _initializeWorker();
+
+  Future<void> _initializeWorker() async {
+    unawaited(_ready.future.catchError((Object _) {}));
     if (_initError != null) {
       throw StateError('Kokoro TTS initialization failed: $_initError');
     }
@@ -128,14 +151,15 @@ class KokoroTtsService extends TextToSpeechService {
       p.join(supportDir, 'tts', 'tokens.txt'),
     );
 
+    if (_disposed) throw StateError('Voice engine was disposed.');
     final mainPort = ReceivePort();
     _mainPort = mainPort;
     final readyCompleter = Completer<void>();
     mainPort.listen((message) => _handleWorkerMessage(message, readyCompleter));
-    _isolate = await Isolate.spawn(
-      _workerEntry,
-      (mainPort.sendPort, [modelPath, voicesPath, tokensPath]),
-    );
+    _isolate = await Isolate.spawn(_workerEntry, (
+      mainPort.sendPort,
+      [modelPath, voicesPath, tokensPath],
+    ));
     await readyCompleter.future.timeout(const Duration(minutes: 2));
   }
 
@@ -197,7 +221,7 @@ class KokoroTtsService extends TextToSpeechService {
               voices: paths[1],
               tokens: paths[2],
             ),
-            numThreads: 2,
+            numThreads: _numThreads,
           ),
           maxNumSentences: 1,
         ),
@@ -251,23 +275,39 @@ class KokoroTtsService extends TextToSpeechService {
   // ── TextToSpeechService API ─────────────────────────────────────────────
 
   @override
-  Future<void> speak(String text, {String? locale}) async {
+  Future<void> speak(String text, {String? locale}) =>
+      speakWithProgress(text, locale: locale, onPlaybackStarted: () {});
+
+  @override
+  Future<void> speakWithProgress(
+    String text, {
+    String? locale,
+    required void Function() onPlaybackStarted,
+  }) async {
+    final requestedGeneration = _generation;
     final normalized = text.trim();
     if (normalized.isEmpty) return;
     await _ensureWorker();
+    if (_disposed || requestedGeneration != _generation) return;
 
     // Kokoro-en speaks English only; the requested locale is ignored.
     final generation = _nextGeneration();
+    _playbackStarted = onPlaybackStarted;
     _playedUpTo = generation;
     _playQueue.clear();
     await _player?.stop();
+    if (_disposed || generation != _generation) return;
     // Wake the playback loop for the old utterance, if any.
     _interruptPlayback();
 
     // Phonemize up front: espeak-ng is initialized on this isolate only.
-    final codepoints = PiperPhonemize.phonemize(normalized, voice: 'en-us')
-        .where((sentence) => sentence.isNotEmpty)
-        .toList();
+    final codepoints = [
+      for (final chunk in speechChunks(normalized))
+        ...PiperPhonemize.phonemize(
+          chunk,
+          voice: 'en-us',
+        ).where((sentence) => sentence.isNotEmpty),
+    ];
     if (codepoints.isEmpty || _workerPort == null) return;
 
     // Send every sentence up front; the worker synthesizes them in order and
@@ -302,7 +342,8 @@ class KokoroTtsService extends TextToSpeechService {
   /// Resolves the pending `speak()` future for [generation], whether its
   /// playback completed, was interrupted, or never produced audio.
   void _finishUtterance(int generation) {
-    if (generation == _utteranceGeneration && !(_utteranceDone?.isCompleted ?? true)) {
+    if (generation == _utteranceGeneration &&
+        !(_utteranceDone?.isCompleted ?? true)) {
       _utteranceDone!.complete();
       _utteranceDone = null;
       _utteranceGeneration = -1;
@@ -311,6 +352,7 @@ class KokoroTtsService extends TextToSpeechService {
 
   @override
   Future<void> stop() async {
+    _playbackStarted = null;
     _nextGeneration();
     _playQueue.clear();
     _playedUpTo = _generation;
@@ -375,6 +417,23 @@ class KokoroTtsService extends TextToSpeechService {
         final wav = _encodeWav(samples, sampleRate);
         final player = _player ??= AudioPlayer();
         await player.stop();
+        await player.setAudioContext(
+          AudioContext(
+            android: AudioContextAndroid(
+              contentType: AndroidContentType.speech,
+              usageType: _conversationMode
+                  ? AndroidUsageType.voiceCommunication
+                  : AndroidUsageType.media,
+              audioFocus: _conversationMode
+                  ? AndroidAudioFocus.none
+                  : AndroidAudioFocus.gain,
+              audioMode: _conversationMode
+                  ? AndroidAudioMode.inCommunication
+                  : AndroidAudioMode.normal,
+              isSpeakerphoneOn: _conversationMode,
+            ),
+          ),
+        );
         final played = Completer<void>();
         _sentenceDone = played;
         unawaited(_playbackSubscription?.cancel());
@@ -382,7 +441,13 @@ class KokoroTtsService extends TextToSpeechService {
           if (!played.isCompleted) played.complete();
         });
         try {
+          if (generation != _generation || _disposed) return;
           await player.play(BytesSource(wav));
+          if (generation == _generation && !_disposed) {
+            final started = _playbackStarted;
+            _playbackStarted = null;
+            started?.call();
+          }
           // Wait for completion, ending early on interruption. The timeout is
           // a fallback in case the completion event never fires.
           final seconds = (samples.length / sampleRate).ceil() + 2;
