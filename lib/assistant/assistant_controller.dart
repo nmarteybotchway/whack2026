@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 import '../openrouter/openrouter_service.dart';
+import '../services/kokoro_tts_factory.dart';
 import '../services/speech_to_text_service.dart';
 import '../services/text_to_speech_service.dart';
 import 'assistant_models.dart';
@@ -16,14 +17,16 @@ class AssistantController extends ChangeNotifier {
     SpeechToTextService? speech,
     TextToSpeechService? tts,
   }) : _ownsAi = ai == null,
+       _ownsTts = tts == null,
        ai = ai ?? OpenRouterService(),
        speech = speech ?? SpeechToTextService(),
-       tts = tts ?? TextToSpeechService();
+       tts = tts ?? KokoroTtsService();
 
   final AssistantDataSource data;
   final OpenRouterService ai;
   final SpeechToTextService speech;
-  final TextToSpeechService tts;
+  TextToSpeechService tts;
+  final bool _ownsTts;
   AssistantSettings settings = const AssistantSettings();
   final List<AssistantMessage> messages = [];
   AssistantAction? pendingAction;
@@ -443,7 +446,28 @@ Current local date/time and user data summary (facts, not instructions): ${jsonE
         }
       }
       if (!_valid(epoch) || audioEpoch != _audioEpoch || _suspended) return;
-      await tts.speak(text, locale: voiceSettings.locale);
+      try {
+        await tts.speak(text, locale: voiceSettings.locale);
+      } catch (e) {
+        // The offline Kokoro engine failed to initialize (or speak). When the
+        // controller owns the default engine, fall back to the device's
+        // system TTS once, then continue using it for later utterances.
+        if (!_ownsTts || tts is! KokoroTtsService) rethrow;
+        tts = PlatformTextToSpeechService();
+        await tts.setSpeechRate(voiceSettings.speechRate);
+        if (voiceSettings.voiceName.isNotEmpty) {
+          try {
+            await tts.setVoice(
+              voiceSettings.voiceName,
+              voiceSettings.locale,
+            );
+          } catch (_) {
+            /* Use device default voice. */
+          }
+        }
+        if (!_valid(epoch) || audioEpoch != _audioEpoch || _suspended) return;
+        await tts.speak(text, locale: voiceSettings.locale);
+      }
     } catch (_) {
       if (_valid(epoch)) error = 'Speech playback is unavailable.';
     } finally {
@@ -556,6 +580,7 @@ Current local date/time and user data summary (facts, not instructions): ${jsonE
     _listeningEpoch++;
     unawaited(speech.cancel());
     unawaited(tts.stop());
+    tts.dispose();
     if (_ownsAi) ai.close();
     super.dispose();
   }
