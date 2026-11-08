@@ -53,7 +53,7 @@ a centre scan button:
 
 | Index | Tab | Body widget |
 | --- | --- | --- |
-| 0 | Home | `_HomeTab`: greeting, `NutrientGapsCard` (`lib/diet/nutrient_tracker_page.dart`), `NutrientGarden(progress: 0.62)` (hard-coded, see TODO) |
+| 0 | Home | `_HomeTab`: greeting, `NutrientGapsCard` (`lib/diet/nutrient_tracker_page.dart`), `NutrientGarden(userId:)` (score from `NutrientScoreService`; reloads after a scan) |
 | 1 | History | `DietHistoryPage` (`lib/diet/diet_history_page.dart`) |
 | — | Scan FAB | pushes `ScanPage(userId:, assistant:)` (`lib/scan/scan_page.dart`) |
 | 2 | Assistant | `AssistantPage(controller:)` (`lib/assistant/assistant_page.dart`) |
@@ -102,7 +102,7 @@ the card. See [health-data.md](health-data.md#known-gaps).
 | `lib/food/` | Shared food model, Firestore access, matching and recommendations | `Food`, `FoodRepository`, `FoodRecommendationService`, `FoodRecommendation`, `UserProfile`, `HealthCondition`, `Preference`, `Nutrient`, `food_matcher.dart`, generated `known_foods.g.dart` (`KnownFood`) |
 | `lib/food_news/`, `lib/food_news.dart` | Local-news / general-info lookup on a `food` doc | `FoodNewsService`, `FoodNewsResult` |
 | `lib/diet/` | Receipts (Veryfi with ML Kit fallback), 14-day diet window, USDA nutrition, nutrient insights | `ReceiptScanPage`, `VeryfiService`, `receipt_parser.dart`, `ReceiptReviewSheet`, `ReceiptStore`, `DietWindowService`/`DietStorage`, `NutritionService`, `NutrientInsights`, `NutrientTrackerPage`, `NutrientGapsCard`, `DietHistoryPage` |
-| `lib/garden/` | Rive "nutrient garden" on the home tab | `NutrientGarden` (loads `assets/rive/tree_demo.riv`), `NutrientScoreService` (not yet wired in) |
+| `lib/garden/` | Rive "nutrient garden" on the home tab | `NutrientGarden` (loads `assets/rive/tree_demo.riv`), `NutrientScoreService` (0..1 score from `NutrientInsights`) |
 | `lib/assistant/` | Chat/voice assistant with tool calls and confirm-before-write actions | `AssistantController`, `FirestoreAssistantRepository` (`AssistantDataSource`), `AssistantSettings`, `AssistantAction`, `AssistantPage`, `AssistantSettingsPage` |
 | `lib/services/` | Thin wrappers over platform speech | `SpeechToTextService` (`speech_to_text`), `TextToSpeechService` (`flutter_tts`) |
 | `lib/openrouter/`, `lib/openrouter.dart` | OpenRouter chat-completions client (text, image, JSON schema, optional web search) | `OpenRouterService`, `OpenRouterImage`, `OpenRouterException` |
@@ -184,7 +184,6 @@ collections are shared by all signed-in users.
 | --- | --- | --- | --- |
 | `users/{uid}` | `religion` (list of labels), `dietary` (list of labels), `health_conditions` (list of `HealthCondition.id`), `updatedAt` | `SettingsPage._save`; assistant `propose_preference_change` | `SettingsPage`, `FoodRecommendationService`, `FoodComplianceService`, assistant |
 | ″ | `ignored_swap_items` (list of `FoodRecommendationService.swapKey`) | `AnalysisResultSheet._setSkipSwap` | `AnalysisResultSheet`, `FoodRecommendationService` |
-| ″ | `nutrientScore`, `nutrientTotals`, `nutrientUpdatedAt` | `NutrientScoreService.save` (not called anywhere yet) | `NutrientScoreService.load` |
 | `users/{uid}/healthProfile/measurements` | `heightCm`, `weightKg`, `bmi`, `heightUnit` (`cm`/`ft_in`), `weightUnit` (`kg`/`lb`), `updatedAt` | `BodyMeasurementsPage` | `BodyMeasurementsCard`, assistant |
 | `users/{uid}/healthData/latest` | `heartRateBpm`, `steps`, `sleepMinutes`, `weightKg`, `systolicMmHg`, `diastolicMmHg`, `optedIn`, `updatedAt` | `HealthDataStore.collectAndStore`, `HealthDataCard` | `HealthDataCard`, assistant |
 | `users/{uid}/bloodPressure/{healthConnectRecordId}` | `id`, `systolic`, `diastolic`, `measuredAt`, `sourceApp`, `sourceModifiedAt`, `unit` (`mmHg`), `provider` (`health_connect`), optional `deviceManufacturer`, `deviceModel` | `BloodPressureSync` | `BloodPressurePage`, assistant |
@@ -282,10 +281,9 @@ Firestore emulator on port 18787 with the UI disabled.
 These come from reading the code against the rules. Before fixing them,
 confirm each one on the emulator or the deployed rules:
 
-- `users/{uid}` writes of `ignored_swap_items` (`AnalysisResultSheet`) and of
-  `nutrientScore`/`nutrientTotals`/`nutrientUpdatedAt` (`NutrientScoreService`)
-  are not in the `users/{uid}` allow-list, so the checked-in rules would
-  reject them.
+- `users/{uid}` writes of `ignored_swap_items` (`AnalysisResultSheet`) are
+  not in the `users/{uid}` allow-list, so the checked-in rules would reject
+  them.
 - The `diet/{dayId}` rule reads `foods[0]`, so a day with an empty `foods`
   list cannot be written.
 - `users/{uid}/receipts` has rules and assistant read support but no writer.

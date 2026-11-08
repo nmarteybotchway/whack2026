@@ -37,8 +37,9 @@ condition and don't want to read every label.
   with UK adult reference values (sodium is treated as a limit). The home
   screen shows the biggest gaps.
 - **Nutrient garden.** Three animated Rive trees on the home screen grow
-  with a nutrient score. *The tree height is currently a hard-coded value
-  (`0.62`). `NutrientScoreService` exists but isn't connected yet.*
+  as your recent diet meets the same vitamin and mineral targets as the
+  tracker, and shrink when you go over the sodium limit. With no diet data
+  yet, a hint suggests scanning a receipt.
 - **Shopping assistant.** A chat tab that runs on OpenRouter with tool
   calling. It can read the user's profile, health readings, diet and food
   history, the food catalogue, alternatives, news and food images. It

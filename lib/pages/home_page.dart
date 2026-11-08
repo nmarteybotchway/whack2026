@@ -44,6 +44,10 @@ const _tabs = [..._leftTabs, ..._rightTabs];
 
 class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   int _index = 0;
+
+  /// Receipt scans finished this session; keys the home tab so its nutrient
+  /// cards reload with the new data.
+  int _scans = 0;
   late final HealthTrackingController _tracking;
   late final AssistantController _assistant;
 
@@ -115,6 +119,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             ScanPage(userId: widget.user.uid, assistant: _assistant),
       ),
     );
+    if (mounted) setState(() => _scans++);
   }
 
   @override
@@ -122,7 +127,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return Scaffold(
       appBar: AppBar(title: Text(_tabs[_index].label)),
       body: switch (_index) {
-        0 => _HomeTab(user: widget.user),
+        // Keyed by scan count so the nutrient cards reload after a scan.
+        0 => _HomeTab(key: ValueKey(_scans), user: widget.user),
         1 => DietHistoryPage(
           key: ValueKey(widget.user.uid),
           userId: widget.user.uid,
@@ -244,7 +250,7 @@ class _ScanButton extends StatelessWidget {
 }
 
 class _HomeTab extends StatelessWidget {
-  const _HomeTab({required this.user});
+  const _HomeTab({super.key, required this.user});
 
   final User user;
 
@@ -271,9 +277,7 @@ class _HomeTab extends StatelessWidget {
         const SizedBox(height: 16),
         NutrientGapsCard(key: ValueKey(user.uid), userId: user.uid),
         const SizedBox(height: 16),
-        // TODO: feed from NutrientScoreService once diet history is wired;
-        // 0.62 stands in for a decent-but-not-perfect diet.
-        const NutrientGarden(progress: 0.62),
+        NutrientGarden(key: ValueKey(user.uid), userId: user.uid),
       ],
     );
   }
