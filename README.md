@@ -34,8 +34,8 @@ condition and don't want to read every label.
   weeks are kept.
 - **Nutrient tracker.** Vitamins and minerals come from USDA FoodData
   Central and are cached in Firestore. Average daily intake is compared
-  with UK adult reference values (sodium is treated as a limit). The home
-  screen shows the biggest gaps.
+  with UK adult reference values (sodium is treated as a limit). The
+  tracker opens from the History tab.
 - **Nutrient garden.** Three animated Rive trees on the home screen grow
   as your recent diet meets the same vitamin and mineral targets as the
   tracker, and shrink when you go over the sodium limit. With no diet data
