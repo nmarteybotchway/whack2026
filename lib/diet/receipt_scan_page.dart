@@ -14,9 +14,13 @@ import 'veryfi_service.dart';
 /// Resolves to the number of items saved when the receipt is stored, or null
 /// if the user backs out.
 class ReceiptScanPage extends StatefulWidget {
-  const ReceiptScanPage({super.key, required this.userId});
+  const ReceiptScanPage({super.key, required this.userId, this.diet});
 
   final String userId;
+
+  /// Window to save through; pass the caller's instance so its
+  /// [DietWindowService.recentDaysStream] refreshes after the save.
+  final DietWindowService? diet;
 
   /// The camera plugin is only available on Android and iOS.
   static bool get isSupported =>
@@ -125,9 +129,14 @@ class _ReceiptScanPageState extends State<ReceiptScanPage>
       final reviewed = await showReceiptReview(context, items);
       if (reviewed == null || reviewed.items.isEmpty || !mounted) return;
 
-      await DietWindowService(widget.userId).save(reviewed.items, reviewed.day);
+      await (widget.diet ?? DietWindowService(widget.userId)).save(reviewed.items, reviewed.day);
       if (!mounted) return;
       Navigator.of(context).pop(reviewed.items.length);
+    } on DietDayOutOfWindowException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.message)));
+      }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {

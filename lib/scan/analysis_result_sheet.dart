@@ -1,10 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+import '../assistant/assistant_controller.dart';
 import '../food/food_matcher.dart';
 import '../food/food_recommendation_service.dart';
 import '../food_news.dart';
 import '../theme.dart';
+import 'alert_summary_service.dart';
 import 'camera_analysis.dart';
 import 'product_identification_service.dart';
 
@@ -12,15 +14,21 @@ import 'product_identification_service.dart';
 ///
 /// Pass [newsService] to show a food news alert under the product details.
 /// Pass [recommendationService] and [userId] to also show whether the food
-/// is safe for this user and what to buy instead.
-Future<void> showAnalysisResult(
+/// is safe for this user and what to buy instead. Pass [assistant] to carry
+/// the whole scan context into the assistant conversation, so questions
+/// about the scanned product work without re-explaining it.
+///
+/// Returns the home-page tab index the user picked from the sheet's
+/// navigation bar, or null when they dismissed it to scan again.
+Future<int?> showAnalysisResult(
   BuildContext context,
   AnalysisResult result, {
   FoodNewsService? newsService,
   FoodRecommendationService? recommendationService,
   String? userId,
+  AssistantController? assistant,
 }) {
-  return showModalBottomSheet<void>(
+  return showModalBottomSheet<int>(
     context: context,
     showDragHandle: true,
     isScrollControlled: true,
@@ -29,6 +37,7 @@ Future<void> showAnalysisResult(
       newsService: newsService,
       recommendationService: recommendationService,
       userId: userId,
+      assistant: assistant,
     ),
   );
 }
@@ -41,6 +50,7 @@ class AnalysisResultSheet extends StatefulWidget {
     this.newsService,
     this.recommendationService,
     this.userId,
+    this.assistant,
   });
 
   final AnalysisResult result;
@@ -51,6 +61,10 @@ class AnalysisResultSheet extends StatefulWidget {
   /// [recommendationService] checks against.
   final String? userId;
 
+  /// Receives the scan context (alerts, personal verdict) once loaded, so
+  /// the assistant can answer questions about this scan.
+  final AssistantController? assistant;
+
   @override
   State<AnalysisResultSheet> createState() => _AnalysisResultSheetState();
 }
@@ -58,6 +72,9 @@ class AnalysisResultSheet extends StatefulWidget {
 class _AnalysisResultSheetState extends State<AnalysisResultSheet> {
   bool _skipSwap = false;
   bool _savingOverride = false;
+
+  /// Summarises the stored news/recommendation texts into one sentence.
+  final AlertSummaryService _summary = AlertSummaryService();
 
   String _itemKey(String name) =>
       name.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
@@ -184,6 +201,15 @@ class _AnalysisResultSheetState extends State<AnalysisResultSheet> {
               _FoodNewsAlert(
                 service: newsService,
                 foodName: _newsFoodName(result.identification!),
+                onResult: widget.assistant == null
+                    ? null
+                    : (news) => widget.assistant!.updateCurrentProduct({
+                          'foodAlert': {
+                            'localNews': news.localNews,
+                            'generalInfo': news.generalInfo,
+                            'hasAlerts': news.hasAlerts,
+                          },
+                        }),
               ),
             ],
             if (widget.recommendationService != null &&
@@ -196,13 +222,112 @@ class _AnalysisResultSheetState extends State<AnalysisResultSheet> {
                 userId: widget.userId!,
                 foodName: _newsFoodName(result.identification!),
                 hideAlternatives: _skipSwap,
+                summary: _summary,
+                onResult: widget.assistant == null
+                    ? null
+                    : (r) => widget.assistant!.updateCurrentProduct({
+                          'personalRecommendation': {
+                            'found': r.found,
+                            'canBuy': r.canBuy,
+                            'reasons': _reasons(r),
+                            if (r.hasGeneralInfo) 'generalInfo': r.generalInfo,
+                            if (r.alternatives.isNotEmpty)
+                              'tryInstead': r.alternatives.take(3).toList(),
+                            if (r.boostsNutrients.isNotEmpty)
+                              'boostsNutrients': r.boostsNutrients
+                                  .map((n) => n.label)
+                                  .toList(),
+                          },
+                        }),
               ),
             ],
             const SizedBox(height: 16),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Scan again'),
+            _SheetNavBar(
+              onScanAgain: () => Navigator.of(context).pop(),
+              onTab: (tab) => Navigator.of(context).pop(tab),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Navigation bar shown at the bottom of the scan-result sheet: a scan-again
+/// action in the middle, and Home / History on the left, Assistant / Settings
+/// on the right — the same layout as the home page's bar. Tapping a tab pops
+/// the sheet with that tab index so the home page can switch to it.
+class _SheetNavBar extends StatelessWidget {
+  const _SheetNavBar({required this.onScanAgain, required this.onTab});
+
+  final VoidCallback onScanAgain;
+  final ValueChanged<int> onTab;
+
+  static const _leftTabs = [
+    ('Home', Icons.home_outlined, Icons.home),
+    ('History', Icons.history_outlined, Icons.history),
+  ];
+  static const _rightTabs = [
+    ('Assistant', Icons.chat_bubble_outline, Icons.chat_bubble),
+    ('Settings', Icons.settings_outlined, Icons.settings),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    Widget item(int index, (String, IconData, IconData) tab) => Expanded(
+          child: InkWell(
+            onTap: () => onTab(index),
+            borderRadius: BorderRadius.circular(12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(tab.$2, color: colors.primary),
+                const SizedBox(height: 4),
+                Text(
+                  tab.$1,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelSmall
+                      ?.copyWith(color: colors.primary),
+                ),
+              ],
+            ),
+          ),
+        );
+
+    // A BottomAppBar needs a Scaffold ancestor, which a modal sheet does not
+    // have, so the same layout is built from a plain surface container.
+    return SafeArea(
+      top: false,
+      child: Container(
+        height: 80,
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        color: colors.surface,
+        child: Row(
+          children: [
+            for (var i = 0; i < _leftTabs.length; i++) item(i, _leftTabs[i]),
+            Expanded(
+              child: Center(
+                child: SizedBox.square(
+                  dimension: 60,
+                  child: FloatingActionButton(
+                    heroTag: null,
+                    tooltip: 'Scan again',
+                    shape: const CircleBorder(),
+                    backgroundColor: colors.primary,
+                    foregroundColor: colors.onPrimary,
+                    elevation: 2,
+                    onPressed: onScanAgain,
+                    child: const Icon(Icons.qr_code_scanner, size: 30),
+                  ),
+                ),
+              ),
+            ),
+            for (var i = 0; i < _rightTabs.length; i++)
+              item(i + _leftTabs.length, _rightTabs[i]),
           ],
         ),
       ),
@@ -213,8 +338,7 @@ class _AnalysisResultSheetState extends State<AnalysisResultSheet> {
 /// The name the food news and recommendation services look up for a scanned
 /// product: the fuzzily matched [KnownFood] when there is one, since stored
 /// foods have generic names, else the product name as read.
-String _newsFoodName(ProductIdentification product) {
-  final productName = product.productName;
+String _newsFoodName(ProductIdentification product) {  final productName = product.productName;
   final name = (productName != null && productName.isNotEmpty)
       ? productName
       : product.displayName;
@@ -224,20 +348,77 @@ String _newsFoodName(ProductIdentification product) {
       name;
 }
 
+/// The first sentence or two of a stored explanation, so scan results stay
+/// short: at most two sentences, capped at ~220 characters, with an ellipsis
+/// when text was cut off.
+String _condense(String text) {
+  final trimmed = text.trim().replaceAll(RegExp(r'\s+'), ' ');
+  if (trimmed.length <= 220) return trimmed;
+  final matches = RegExp(r'.*?[.!?]').allMatches(trimmed).take(2).toList();
+  final condensed = matches.isEmpty
+      ? trimmed
+      : trimmed.substring(0, matches.last.end);
+  if (condensed.length > 220) {
+    final cut = trimmed.substring(0, 217).trimRight();
+    return RegExp(r'.*?[.!?]').firstMatch(cut)?.end != null
+        ? '${trimmed.substring(0, RegExp(r'.*?[.!?]').firstMatch(cut)!.end)}…'
+        : '$cut…';
+  }
+  return condensed.length < trimmed.length ? '$condensed…' : condensed;
+}
+
 /// Food news alert for a scanned product: a green no-news card when the
 /// database has nothing, or an alert card with local news (always listed
 /// before general info) when it does.
-class _FoodNewsAlert extends StatelessWidget {
-  const _FoodNewsAlert({required this.service, required this.foodName});
+class _FoodNewsAlert extends StatefulWidget {
+  const _FoodNewsAlert({
+    required this.service,
+    required this.foodName,
+    this.onResult,
+  });
 
   final FoodNewsService service;
   final String foodName;
 
+  /// Called with the loaded news, so the owner can carry it elsewhere
+  /// (e.g. the assistant context). Never called on failure.
+  final ValueChanged<FoodNewsResult>? onResult;
+
+  @override
+  State<_FoodNewsAlert> createState() => _FoodNewsAlertState();
+}
+
+/// Fetches once per [_FoodNewsAlert.foodName], so parent rebuilds (e.g.
+/// toggling the swap checkbox) don't refetch.
+class _FoodNewsAlertState extends State<_FoodNewsAlert> {
+  late Future<FoodNewsResult> _news;
+
+  @override
+  void initState() {
+    super.initState();
+    _news = widget.service.getNews(widget.foodName);
+    _news.then((news) => widget.onResult?.call(news)).catchError((_) {});
+  }
+
+  @override
+  void didUpdateWidget(_FoodNewsAlert oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.service != widget.service ||
+        oldWidget.foodName != widget.foodName) {
+      _news = widget.service.getNews(widget.foodName);
+      _news.then((news) => widget.onResult?.call(news)).catchError((_) {});
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<FoodNewsResult>(
-      future: service.getNews(foodName),
+      future: _news,
       builder: (context, snap) {
+        if (snap.hasError) {
+          debugPrint('Food news failed for ${widget.foodName}: ${snap.error}');
+          return const _LoadFailedCard('Couldn’t load food news.');
+        }
         if (!snap.hasData) {
           return const Padding(
             padding: EdgeInsets.all(16),
@@ -317,24 +498,71 @@ class _FoodNewsAlert extends StatelessWidget {
 /// signed-in user's preferences and health data: a green "safe to buy" card
 /// when nothing applies, a neutral card when the food isn't in the database,
 /// or a red card with the reasons and what to buy instead.
-class _RecommendationCard extends StatelessWidget {
+class _RecommendationCard extends StatefulWidget {
   const _RecommendationCard({
     required this.service,
     required this.userId,
     required this.foodName,
     this.hideAlternatives = false,
+    required this.summary,
+    this.onResult,
   });
 
   final FoodRecommendationService service;
   final String userId;
   final String foodName;
   final bool hideAlternatives;
+  final AlertSummaryService summary;
+
+  /// Called with the loaded verdict, so the owner can carry it elsewhere
+  /// (e.g. the assistant context). Never called on failure.
+  final ValueChanged<FoodRecommendation>? onResult;
+
+  @override
+  State<_RecommendationCard> createState() => _RecommendationCardState();
+}
+
+/// Fetches once per user and food, so toggling [hideAlternatives] (the swap
+/// checkbox) just re-renders the loaded verdict.
+class _RecommendationCardState extends State<_RecommendationCard> {
+  late Future<FoodRecommendation> _recommendation;
+
+  Future<FoodRecommendation> _load() => widget.service.recommendFor(
+    uid: widget.userId,
+    foodName: widget.foodName,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _recommendation = _load();
+    _recommendation.then((r) => widget.onResult?.call(r)).catchError((_) {});
+  }
+
+  @override
+  void didUpdateWidget(_RecommendationCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.service != widget.service ||
+        oldWidget.userId != widget.userId ||
+        oldWidget.foodName != widget.foodName) {
+      _recommendation = _load();
+      _recommendation
+          .then((r) => widget.onResult?.call(r))
+          .catchError((_) {});
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<FoodRecommendation>(
-      future: service.recommendFor(uid: userId, foodName: foodName),
+      future: _recommendation,
       builder: (context, snap) {
+        if (snap.hasError) {
+          debugPrint(
+            'Recommendation failed for ${widget.foodName}: ${snap.error}',
+          );
+          return const _LoadFailedCard('Couldn’t load a recommendation.');
+        }
         if (!snap.hasData) {
           return const Padding(
             padding: EdgeInsets.all(16),
@@ -361,8 +589,8 @@ class _RecommendationCard extends StatelessWidget {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Safe to buy: no news or general info and it matches '
-                      'none of your preferences or health data.'
+                      'Safe to buy: no alerts, and it matches none of your '
+                      'preferences or health data.'
                       '${_boostText(r)}',
                       style: theme.textTheme.bodyMedium,
                     ),
@@ -415,31 +643,33 @@ class _RecommendationCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 8),
+                // One AI summary sentence built from all the reasons; the
+                // truncated reason list shows while it loads or if the
+                // summariser is unavailable.
+                // Personal clashes first (conditions/preferences), then the
+                // AI one-sentence summary of the full explanation below.
                 if (_reasons(r) case final reasons when reasons.isNotEmpty)
-                  Text(reasons.join(' · '), style: theme.textTheme.bodyMedium),
-                if (r.hasGeneralInfo ||
-                    r.clashingConditions.isNotEmpty ||
-                    r.clashingPrefs.isNotEmpty) ...[
-                  const SizedBox(height: 6),
                   Text(
-                    _personalizedRationale(r),
+                    reasons.join(' · '),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                const SizedBox(height: 4),
+                FutureBuilder<String>(
+                  future: _summaryLine(r),
+                  builder: (context, summarySnap) => Text(
+                    summarySnap.hasData && summarySnap.data!.isNotEmpty
+                        ? summarySnap.data!
+                        : _condense(r.generalInfo ?? ''),
                     style: theme.textTheme.bodyMedium,
                   ),
-                ],
-                if (r.excessNutrients.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    'Your recent diet is already over the daily limit for '
-                    '${r.excessNutrients.map((n) => n.label.toLowerCase()).join(' and ')}, '
-                    'and this food is high in it.',
-                    style: theme.textTheme.bodyMedium,
-                  ),
-                ],
+                ),
                 if (r.boostsNutrients.isNotEmpty) ...[
                   const SizedBox(height: 6),
                   Text(_boostText(r).trim(), style: theme.textTheme.bodySmall),
                 ],
-                if (!hideAlternatives && r.alternatives.isNotEmpty) ...[
+                if (!widget.hideAlternatives && r.alternatives.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Text('Try instead', style: theme.textTheme.titleSmall),
                   const SizedBox(height: 4),
@@ -454,59 +684,97 @@ class _RecommendationCard extends StatelessWidget {
     );
   }
 
-  /// Short reason chips for why [r]'s food is not recommended.
-  List<String> _reasons(FoodRecommendation r) => [
-    if (r.hasNews) 'Active food news',
-    for (final c in r.clashingConditions) c.label,
-    for (final p in r.clashingPrefs) p.label,
-    for (final n in r.excessNutrients) 'High in ${n.label}',
-  ];
-
-  String _personalizedRationale(FoodRecommendation r) {
-    final info = r.generalInfo?.trim();
-    final conditions = r.clashingConditions.map((c) => c.label).toList();
-    final prefs = r.clashingPrefs.map((p) => p.label.toLowerCase()).toList();
-    final personal = [
-      ...conditions.map(
-        (condition) => condition == 'Pregnancy'
-            ? 'you are pregnant'
-            : 'you have ${_conditionPhrase(condition)}',
-      ),
-      ...prefs.map((preference) => 'you follow a $preference diet'),
-    ];
-    final context = personal.isEmpty
-        ? ''
-        : ' This matters because ${personal.join(' and ')}.';
-    if (info == null || info.isEmpty) {
-      return personal.isEmpty
-          ? ''
-          : 'This is not recommended for you because ${personal.join(' and ')}.';
-    }
-    return 'This is not recommended for you. $info$context';
+  /// The AI one-sentence summary of why this food is not recommended, built
+  /// from every reason the recommender found. Cached in state so toggling
+  /// the swap checkbox doesn't re-call the summariser.
+  Future<String> _summaryLine(FoodRecommendation r) {
+    if (_cachedSummary != null) return _cachedSummary!;
+    final full = [
+      if (r.hasGeneralInfo) r.generalInfo!,
+      if (r.clashingConditions.isNotEmpty || r.clashingPrefs.isNotEmpty)
+        _personalizedRationale(r),
+      if (r.excessNutrients.isNotEmpty)
+        'This food is high in '
+        '${r.excessNutrients.map((n) => n.label.toLowerCase()).join(' and ')}, '
+        'which the recent diet is already over the daily limit for.',
+    ].join(' ');
+    _cachedSummary = widget.summary.summarize(
+      full.isEmpty ? 'This food is not recommended.' : full,
+    );
+    return _cachedSummary!;
   }
 
-  String _conditionPhrase(String label) => switch (label) {
-    'Diabetes' => 'diabetes',
-    'High blood pressure' => 'high blood pressure',
-    'High cholesterol' => 'high cholesterol',
-    'Heart disease' => 'heart disease',
-    'Kidney disease' => 'kidney disease',
-    'Coeliac disease' => 'coeliac disease',
-    'Lactose intolerance' => 'lactose intolerance',
-    'Irritable bowel syndrome' => 'irritable bowel syndrome',
-    'Acid reflux' => 'acid reflux',
-    'Peanut allergy' => 'a peanut allergy',
-    'Tree nut allergy' => 'a tree nut allergy',
-    'Milk allergy' => 'a milk allergy',
-    'Egg allergy' => 'an egg allergy',
-    'Fish allergy' => 'a fish allergy',
-    'Shellfish allergy' => 'a shellfish allergy',
-    'Soy allergy' => 'a soy allergy',
-    'Wheat allergy' => 'a wheat allergy',
-    'Sesame allergy' => 'a sesame allergy',
-    'Pregnancy' => 'pregnant',
-    _ => label.toLowerCase(),
-  };
+  Future<String>? _cachedSummary;
+}
+
+/// Short reason labels for why [r]'s food is not recommended.
+List<String> _reasons(FoodRecommendation r) => [
+  if (r.hasNews) 'Active food news',
+  for (final c in r.clashingConditions) c.label,
+  for (final p in r.clashingPrefs) p.label,
+  for (final n in r.excessNutrients) 'High in ${n.label}',
+];
+
+String _personalizedRationale(FoodRecommendation r) {
+  final conditions = r.clashingConditions.map((c) => c.label).toList();
+  final prefs = r.clashingPrefs.map((p) => p.label.toLowerCase()).toList();
+  final personal = [
+    ...conditions.map(
+      (condition) => condition == 'Pregnancy'
+          ? 'you are pregnant'
+          : 'you have ${_conditionPhrase(condition)}',
+    ),
+    ...prefs.map((preference) => 'you follow a $preference diet'),
+  ];
+  return 'Not recommended because ${personal.join(' and ')}.';
+}
+
+String _conditionPhrase(String label) => switch (label) {
+  'Diabetes' => 'diabetes',
+  'High blood pressure' => 'high blood pressure',
+  'High cholesterol' => 'high cholesterol',
+  'Heart disease' => 'heart disease',
+  'Kidney disease' => 'kidney disease',
+  'Coeliac disease' => 'coeliac disease',
+  'Lactose intolerance' => 'lactose intolerance',
+  'Irritable bowel syndrome' => 'irritable bowel syndrome',
+  'Acid reflux' => 'acid reflux',
+  'Peanut allergy' => 'a peanut allergy',
+  'Tree nut allergy' => 'a tree nut allergy',
+  'Milk allergy' => 'a milk allergy',
+  'Egg allergy' => 'an egg allergy',
+  'Fish allergy' => 'a fish allergy',
+  'Shellfish allergy' => 'a shellfish allergy',
+  'Soy allergy' => 'a soy allergy',
+  'Wheat allergy' => 'a wheat allergy',
+  'Sesame allergy' => 'a sesame allergy',
+  'Pregnancy' => 'pregnant',
+  _ => label.toLowerCase(),
+};
+
+/// Neutral card shown in place of a section whose data failed to load.
+class _LoadFailedCard extends StatelessWidget {
+  const _LoadFailedCard(this.message);
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      color: theme.colorScheme.surfaceContainerHighest,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Icon(Icons.cloud_off, color: theme.colorScheme.onSurfaceVariant),
+            const SizedBox(width: 8),
+            Expanded(child: Text(message, style: theme.textTheme.bodyMedium)),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// Notes the nutrients [r]'s food would top up, or an empty string.

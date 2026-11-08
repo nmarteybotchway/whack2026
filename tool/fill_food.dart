@@ -47,11 +47,12 @@ the last $_newsDays days, and it must affect Coventry, the West Midlands or
 the UK as a whole: UK outbreaks, Food Standards Agency (FSA) alerts and
 recalls, or products sold in UK shops. Prefer events in Coventry or the West
 Midlands, then UK-wide ones. Ignore events elsewhere unless the affected
-product is sold in the UK. Write one or two plain sentences naming the
-problem, where in the UK it applies, and the date it was reported, with no
-links or citations. General nutrition news, studies and diet advice do not
-count. If nothing recent qualifies, or you cannot confirm it from search
-results, return an empty string. Never invent an event.''';
+product is sold in the UK. Write ONE plain sentence of at most 20 words
+naming the problem, where in the UK it applies, and the date it was
+reported, with no links or citations. General nutrition news, studies and
+diet advice do not count. If nothing recent qualifies, or you cannot
+confirm it from search results, return an empty string. Never invent an
+event.''';
 
 final _newsSchema = {
   'type': 'object',
@@ -243,11 +244,12 @@ Future<void> _fill(
     'mainstream dietary rules. Use an empty list if none apply.\n'
     '$preferences\n\n'
     '"general_info": a reason why even a healthy person with no health '
-    'conditions or dietary preferences should avoid or limit this food, in one '
-    'or two plain sentences (e.g. bacon: processed meat classed as a cause of '
-    'cancer, high in saturated fat and salt). Use an empty string if the food '
-    'is fine for a healthy person as part of a normal diet (e.g. apples, '
-    'cabbage, eggs). Do not describe the food or its benefits.\n\n'
+    'conditions or dietary preferences should avoid or limit this food, in '
+    'ONE plain sentence of at most 20 words (e.g. bacon: "Processed meat '
+    'classed as a cause of cancer, high in saturated fat and salt."). Use an '
+    'empty string if the food is fine for a healthy person as part of a '
+    'normal diet (e.g. apples, cabbage, eggs). Do not describe the food or '
+    'its benefits.\n\n'
     '$_newsRules\n\nReply as JSON.',
     _fullSchema,
   );

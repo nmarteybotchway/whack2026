@@ -1,3 +1,6 @@
+/// Formats a receipt amount for display, e.g. `£1.65`.
+String formatPrice(double amount) => '£${amount.toStringAsFixed(2)}';
+
 /// An item extracted from a scanned receipt.
 class ReceiptItem {
   const ReceiptItem({required this.name, required this.price, this.quantity = 1});

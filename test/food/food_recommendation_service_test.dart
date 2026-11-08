@@ -334,6 +334,50 @@ void main() {
       expect(r.canBuy, isTrue);
     });
 
+    test('a failed parallel diet read (ParallelWaitError) skips nutrient '
+        'checks', () async {
+      final service = FoodRecommendationService(
+        fetcher: (name) async => crisps,
+        userFetcher: (uid) async => null,
+        // Mirrors NutrientInsights.load: a record `.wait` where one read
+        // fails throws a ParallelWaitError, which is an Error.
+        insightsFetcher: (uid) async {
+          await (Future<int>.error(Exception('offline')), Future.value(1)).wait;
+          return insights({'NA': 20000});
+        },
+      );
+      final r = await service.recommendFor(uid: 'u1', foodName: 'Crisps');
+      expect(r.canBuy, isTrue);
+    });
+
+    test('a diet fetcher throwing an Error skips nutrient checks', () async {
+      final service = FoodRecommendationService(
+        fetcher: (name) async => crisps,
+        userFetcher: (uid) async => null,
+        insightsFetcher: (uid) async => throw StateError('bad diet'),
+      );
+      final r = await service.recommendFor(uid: 'u1', foodName: 'Crisps');
+      expect(r.canBuy, isTrue);
+    });
+
+    test('a failed profile read propagates the original error', () async {
+      final service = FoodRecommendationService(
+        fetcher: (name) async => bacon,
+        userFetcher: (uid) async => throw Exception('permission-denied'),
+        insightsFetcher: (uid) async => throw Exception('offline'),
+      );
+      await expectLater(
+        service.recommendFor(uid: 'u1', foodName: 'Bacon'),
+        throwsA(
+          isA<Exception>().having(
+            (e) => '$e',
+            'message',
+            contains('permission-denied'),
+          ),
+        ),
+      );
+    });
+
     test('unknown food is flagged as not found', () async {
       final r = await service.recommendFor(uid: 'u1', foodName: 'Durian');
       expect(r.found, isFalse);
