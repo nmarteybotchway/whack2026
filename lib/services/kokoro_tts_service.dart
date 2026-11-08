@@ -189,14 +189,11 @@ class KokoroTtsService extends TextToSpeechService {
             readyCompleter.completeError(StateError('${message['error']}'));
           }
         } else if (generation == _generation) {
-          _pendingSentences--;
-          if (_pendingSentences <= 0) {
-            // Give up the whole utterance on a synthesis failure.
-            _playedUpTo = -1;
-            _playQueue.clear();
-            _interruptPlayback();
-            _finishUtterance(generation);
-          }
+          _failUtterance(
+            generation,
+            StateError('Speech synthesis failed.'),
+            StackTrace.current,
+          );
         }
     }
   }
@@ -341,13 +338,35 @@ class KokoroTtsService extends TextToSpeechService {
 
   /// Resolves the pending `speak()` future for [generation], whether its
   /// playback completed, was interrupted, or never produced audio.
-  void _finishUtterance(int generation) {
+  void _finishUtterance(
+    int generation, {
+    Object? error,
+    StackTrace? stackTrace,
+  }) {
     if (generation == _utteranceGeneration &&
         !(_utteranceDone?.isCompleted ?? true)) {
-      _utteranceDone!.complete();
+      if (error == null) {
+        _utteranceDone!.complete();
+      } else {
+        _utteranceDone!.completeError(error, stackTrace);
+      }
       _utteranceDone = null;
       _utteranceGeneration = -1;
     }
+  }
+
+  /// Fail the awaiting caller and invalidate queued/in-flight sentence audio.
+  void _failUtterance(int generation, Object error, StackTrace stackTrace) {
+    if (generation != _generation || generation != _utteranceGeneration) return;
+    ++_generation;
+    _workerPort?.send({'event': 'cancel', 'generation': _generation});
+    _playedUpTo = -1;
+    _pendingSentences = 0;
+    _playQueue.clear();
+    _interruptPlayback();
+    final player = _player;
+    if (player != null) unawaited(player.stop().catchError((Object _) {}));
+    _finishUtterance(generation, error: error, stackTrace: stackTrace);
   }
 
   @override
@@ -356,8 +375,11 @@ class KokoroTtsService extends TextToSpeechService {
     _nextGeneration();
     _playQueue.clear();
     _playedUpTo = _generation;
-    await _player?.stop();
-    _interruptPlayback();
+    try {
+      await _player?.stop();
+    } finally {
+      _interruptPlayback();
+    }
   }
 
   @override
@@ -409,9 +431,11 @@ class KokoroTtsService extends TextToSpeechService {
   Future<void> _drainQueue() async {
     if (_draining) return;
     _draining = true;
+    var playbackGeneration = _generation;
     try {
       while (_playQueue.isNotEmpty && !_disposed) {
         final generation = _generation;
+        playbackGeneration = generation;
         if (_playedUpTo != generation) return;
         final (samples, sampleRate) = _playQueue.removeAt(0);
         final wav = _encodeWav(samples, sampleRate);
@@ -452,7 +476,8 @@ class KokoroTtsService extends TextToSpeechService {
           // a fallback in case the completion event never fires.
           final seconds = (samples.length / sampleRate).ceil() + 2;
           await played.future.timeout(Duration(seconds: seconds));
-        } catch (_) {
+        } catch (error, stackTrace) {
+          _failUtterance(generation, error, stackTrace);
           return;
         } finally {
           await _playbackSubscription?.cancel();
@@ -464,15 +489,20 @@ class KokoroTtsService extends TextToSpeechService {
           _finishUtterance(generation);
         }
       }
+    } catch (error, stackTrace) {
+      _failUtterance(playbackGeneration, error, stackTrace);
     } finally {
       _draining = false;
+      // A new utterance may have queued audio while an older loop unwound.
+      if (_playQueue.isNotEmpty && !_disposed) unawaited(_drainQueue());
     }
   }
 
   /// Wakes a playback loop waiting on the current sentence, after the audio
   /// player has already been stopped by the interrupting call.
   void _interruptPlayback() {
-    _sentenceDone?.complete();
+    final sentence = _sentenceDone;
+    if (sentence != null && !sentence.isCompleted) sentence.complete();
     _sentenceDone = null;
   }
 

@@ -25,8 +25,11 @@ resolved it to `z-ai/glm-5.3-flash` and returned a valid function call.
   camera stays on the live preview until you press the shutter or the assistant
   requests a fresh photo to identify a product.
   Start speaks a greeting and listens for questions automatically, returning
-  to listening after replies. The companion keeps listening during playback on supported Android devices
-  and interrupts when you speak.
+  to listening after replies. This is turn-based: the microphone is stopped
+  before the assistant speaks and remains closed while it prepares or answers.
+  Tap the mic's **Interrupt and talk** action to cancel a reply and listen again;
+  speaking over playback does not trigger interruption. A two-second pause
+  submits recognized speech automatically. Typed questions still work.
   General questions work before the first scan.
   Say “show me more” or use **Details** for the original scan sheet or
   the app-bar chat button to open the full shared conversation.
@@ -34,23 +37,25 @@ resolved it to `z-ai/glm-5.3-flash` and returned a valid function call.
   and microphone activity. Resume the companion explicitly. Automatic listening
   runs only during the foreground shopping session.
 
-The Android duplex microphone filters low-level room noise before recognition,
-using platform noise suppression when available and an adaptive level gate.
-Brief impulses do not qualify for interruption; a short audio buffer preserves
-word beginnings, and a release interval preserves word endings. Recognition
-results must follow recent qualified microphone activity. This is a level
-filter, so loud nearby conversations can still be recognized.
+The native duplex implementation is retained for future experiments but is not
+used by the current shopping flow. Turn-based mode uses the ordinary device
+recognizer and does not require Android 13 external audio injection or hardware
+echo cancellation. Recognition availability, permission, language and network
+requirements still depend on the installed recognizer. Test on the target phone.
 
 ## Camera shopping companion
 
 `ShoppingCompanionController` coordinates the existing `AssistantController`
-without creating a second chat session. Live Android speech uses
-`LiveVoiceService` and `LiveVoiceBridge`, backed by an installed local system
-voice; ordinary assistant speech can still use Kokoro. The live voice reports
-native playback start/completion, has a five-second startup watchdog, and
-keeps the selected Bluetooth/headset route or uses the phone speaker.
-The panel prioritizes answering, preparing voice, and speaking over the
-always-open microphone indicator, and shows a Retry speech action on failure.
+without creating a second chat session. The default voice is Kokoro, with the
+device TTS engine used if owned Kokoro playback fails. Speaking claims the audio
+turn before stopping recognition, and foreground listening resumes after replies.
+The panel shows preparing/speaking status, an interrupt button, and Retry speech
+on failure. A paused microphone stays paused until explicitly resumed.
+
+Kokoro synthesis/playback failures reject the awaiting utterance and invalidate
+queued audio, allowing fallback instead of leaving the controller stuck speaking.
+Completion is bounded by a reply-length-based watchdog. Model request cancellation
+and late recognition results are guarded by session/operation epochs.
 
 New scans update the
 selected product, invalidate unfinished product-specific model turns, and stop

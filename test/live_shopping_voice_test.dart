@@ -190,7 +190,7 @@ void main() {
   );
 
   test(
-    'duplex listening interrupts a read only turn and keeps new speech',
+    'turn based mode keeps the microphone closed during a model reply',
     () async {
       final pending = Completer<http.Response>();
       final speech = _Speech()..duplex = true;
@@ -207,17 +207,19 @@ void main() {
         assistant: assistant,
         briefingLoader: (_) async => throw StateError('unused'),
       );
-
       await companion.start();
       await _waitFor(() => speech.listenCount == 1);
       final turn = companion.submit('Tell me about this product');
-      await _waitFor(() => assistant.busy);
-      await _waitFor(() => companion.listening);
-      speech.result('Actually, is it suitable for me?', isFinal: false);
-      await _waitFor(() => companion.draft.contains('Actually'));
+      await _waitFor(() => assistant.busy && !assistant.listening);
+      await Future<void>.delayed(const Duration(milliseconds: 350));
+      expect(speech.duplexEnabled, isFalse);
+      expect(speech.listenCount, 1);
+      expect(speech.isListening, isFalse);
 
-      expect(assistant.busy, isFalse);
-      expect(companion.draft, 'Actually, is it suitable for me?');
+      // A delayed result from the old recognizer must not cancel this turn.
+      speech.result('Delayed old words', isFinal: true);
+      expect(companion.draft, isEmpty);
+      expect(assistant.busy, isTrue);
       pending.complete(
         http.Response(
           jsonEncode({
@@ -225,7 +227,7 @@ void main() {
               {
                 'message': {
                   'role': 'assistant',
-                  'content': 'The interrupted answer.',
+                  'content': 'A grounded answer.',
                 },
               },
             ],
@@ -234,12 +236,13 @@ void main() {
         ),
       );
       await turn;
+      await _waitFor(() => companion.listening && speech.listenCount == 2);
       await _dispose(companion, assistant);
     },
   );
 
   test(
-    'duplex listening interrupts TTS and retains the user transcript',
+    'greeting keeps microphone closed until Interrupt and talk is tapped',
     () async {
       final speech = _Speech()..duplex = true;
       final tts = _BlockingTts();
@@ -248,18 +251,47 @@ void main() {
         assistant: assistant,
         briefingLoader: (_) async => throw StateError('unused'),
       );
-
       final starting = companion.start();
-      await _waitFor(() => speech.listenCount == 1);
+      await _waitFor(() => tts.playing);
+      expect(speech.listenCount, 0);
+      expect(assistant.listening, isFalse);
+      expect(speech.duplexEnabled, isFalse);
+      await companion.interruptAndListen();
+      await starting;
+      await _waitFor(() => companion.listening);
+      expect(tts.playing, isFalse);
+      expect(assistant.speaking, isFalse);
       speech.result(
         'Could you compare this with another option?',
         isFinal: false,
       );
-      await _waitFor(() => companion.draft.isNotEmpty);
-
       expect(companion.draft, 'Could you compare this with another option?');
-      expect(assistant.speaking, isFalse);
+      await _dispose(companion, assistant);
+    },
+  );
+
+  test(
+    'microphone remains closed throughout playback and resumes on completion',
+    () async {
+      final speech = _Speech();
+      final tts = _BlockingTts();
+      final assistant = _assistant(speech: speech, tts: tts);
+      final companion = ShoppingCompanionController(
+        assistant: assistant,
+        briefingLoader: (_) async => throw StateError('unused'),
+      );
+      final starting = companion.start();
+      await _waitFor(() => tts.playing);
+      await Future<void>.delayed(const Duration(milliseconds: 350));
+      expect(speech.listenCount, 0);
+      tts.finish();
       await starting;
+      await _waitFor(() => companion.listening);
+      expect(speech.listenCount, 1);
+      await companion.pauseListening();
+      await Future<void>.delayed(const Duration(milliseconds: 350));
+      expect(companion.listening, isFalse);
+      expect(speech.listenCount, 1);
       await _dispose(companion, assistant);
     },
   );
@@ -429,6 +461,10 @@ class _Speech extends SpeechToTextService {
   void Function(String, bool)? _onResult;
   void Function(String)? _onStatus;
   int listenCount = 0;
+  bool _listening = false;
+
+  @override
+  bool get isListening => _listening;
 
   @override
   bool get supportsDuplex => duplex;
@@ -444,6 +480,7 @@ class _Speech extends SpeechToTextService {
     String locale = 'en-GB',
   }) async {
     listenCount++;
+    _listening = true;
     events?.add('listen:$listenCount');
     _onResult = onResult;
     _onStatus = onStatus;
@@ -455,9 +492,14 @@ class _Speech extends SpeechToTextService {
   void status(String value) => _onStatus?.call(value);
 
   @override
-  Future<void> stop() async {}
+  Future<void> stop() async {
+    _listening = false;
+  }
+
   @override
-  Future<void> cancel() async {}
+  Future<void> cancel() async {
+    _listening = false;
+  }
 }
 
 class _Tts extends TextToSpeechService {
@@ -490,16 +532,21 @@ class _GatedTts extends _Tts {
 }
 
 class _BlockingTts extends TextToSpeechService {
-  final Completer<void> _stopped = Completer<void>();
+  Completer<void>? _completion;
+  bool get playing => _completion != null && !_completion!.isCompleted;
 
   @override
-  Future<void> speak(String text, {String? locale}) => _stopped.future;
-
-  @override
-  Future<void> stop() async {
-    if (!_stopped.isCompleted) _stopped.complete();
+  Future<void> speak(String text, {String? locale}) {
+    _completion = Completer<void>();
+    return _completion!.future;
   }
 
+  void finish() {
+    if (playing) _completion!.complete();
+  }
+
+  @override
+  Future<void> stop() async => finish();
   @override
   Future<void> setSpeechRate(double rate) async {}
   @override

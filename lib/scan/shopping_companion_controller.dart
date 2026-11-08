@@ -52,6 +52,7 @@ class ShoppingCompanionController extends ChangeNotifier {
   bool _micStarting = false;
   bool _submitting = false;
   bool _greetingPlaying = false;
+  bool _interrupting = false;
   bool _disposed = false;
   Timer? _silenceTimer;
   Timer? _listenTimer;
@@ -131,8 +132,8 @@ class ShoppingCompanionController extends ChangeNotifier {
     if (!_isSession(session)) return;
     assistant.resumeForeground();
     assistant.sessionVoiceEnabled = true;
-    assistant.speech.duplexEnabled = true;
-    assistant.configureLiveVoice(true);
+    assistant.speech.duplexEnabled = false;
+    assistant.configureLiveVoice(false);
     try {
       await assistant.prepareLiveVoice();
     } catch (_) {
@@ -145,10 +146,8 @@ class ShoppingCompanionController extends ChangeNotifier {
     _ready = true;
     _greetingPlaying = true;
     _notify();
-    // Native duplex recognition starts first, so the shopper can interrupt
-    // the greeting. The greeting gate prevents scan speech from overlapping.
-    await _beginListening();
-    if (!_isSession(session)) return;
+    // Speak first; the microphone opens after playback finishes. The explicit
+    // Interrupt and talk button can stop the greeting and open the microphone.
     try {
       await assistant.speakSession(_greeting);
     } catch (_) {
@@ -556,14 +555,18 @@ class ShoppingCompanionController extends ChangeNotifier {
       !_scanPaused &&
       !_disposed &&
       !_micStarting &&
+      !_interrupting &&
+      !_greetingPlaying &&
+      !_submitting &&
+      !(_silenceTimer?.isActive ?? false) &&
       !loading &&
       _pendingBriefing == null &&
       !assistant.listening &&
       assistant.pendingAction == null &&
       !assistant.committing &&
-      (!assistant.busy || assistant.speech.supportsDuplex) &&
-      (!assistant.speaking || assistant.speech.supportsDuplex) &&
-      (!assistant.preparingSpeech || assistant.speech.supportsDuplex);
+      !assistant.busy &&
+      !assistant.speaking &&
+      !assistant.preparingSpeech;
 
   Future<void> _beginListening() async {
     if (!_canListen) return;
@@ -582,14 +585,11 @@ class ShoppingCompanionController extends ChangeNotifier {
           }
           final value = _joinTranscript(initialDraft, transcript.trim());
           if (value == draft && heardText) return;
-          if (assistant.busy &&
-              assistant.pendingAction == null &&
-              !assistant.committing) {
-            ++_submission;
-            _submitting = false;
-            unawaited(assistant.cancelTurn(keepListening: true));
-          } else if (assistant.speaking) {
-            unawaited(assistant.stopAudio());
+          // Ignore delayed callbacks from a recognizer whose turn has ended.
+          if (assistant.busy ||
+              assistant.speaking ||
+              assistant.preparingSpeech) {
+            return;
           }
           heardText = true;
           draft = value;
@@ -609,8 +609,8 @@ class ShoppingCompanionController extends ChangeNotifier {
           }
           _scheduleListening(const Duration(milliseconds: 100));
         },
-        keepPlayback: true,
-        allowWhileBusy: assistant.speech.supportsDuplex,
+        keepPlayback: false,
+        allowWhileBusy: false,
       );
     } finally {
       _micStarting = false;
@@ -654,25 +654,34 @@ class ShoppingCompanionController extends ChangeNotifier {
   Future<void> stopListening() => pauseListening();
 
   Future<void> interruptAndListen() async {
-    if (_disposed || !active) return;
+    if (_disposed || !active || _interrupting) return;
     final session = _session;
+    _interrupting = true;
     _recognition++;
     ++_submission;
     _submitting = false;
     _micPaused = false;
     _silenceTimer?.cancel();
     _listenTimer?.cancel();
-    if (assistant.pendingAction == null &&
-        !assistant.committing &&
-        assistant.busy) {
-      await assistant.cancelTurn(keepListening: true);
+    try {
+      if (assistant.pendingAction == null &&
+          !assistant.committing &&
+          assistant.busy) {
+        await assistant.cancelTurn();
+      }
+      await assistant.stopListening();
+      await assistant.stopAudio();
+      if (!_isSession(session)) return;
+      _greetingPlaying = false;
+      // An explicit interruption takes priority over queued automatic briefings.
+      _pendingBriefing = null;
+      assistant.sessionVoiceEnabled = true;
+    } finally {
+      _interrupting = false;
     }
-    await assistant.stopListening();
-    await assistant.stopAudio();
     if (!_isSession(session)) return;
-    assistant.sessionVoiceEnabled = true;
     _notify();
-    _scheduleListening(Duration.zero);
+    _scheduleListening();
   }
 
   Future<void> stopSpeech() => assistant.stopAudio();

@@ -156,7 +156,7 @@ class _ShoppingCompanionOverlayState extends State<ShoppingCompanionOverlay> {
           const Padding(
             padding: EdgeInsets.only(left: 34, bottom: 10),
             child: Text(
-              'Get spoken scan summaries and ask questions by voice or text.',
+              'Hear spoken scan summaries, then ask by voice or text. Tap the mic to interrupt a reply.',
               style: TextStyle(color: Colors.white70, fontSize: 12),
             ),
           ),
@@ -183,14 +183,14 @@ class _ShoppingCompanionOverlayState extends State<ShoppingCompanionOverlay> {
   Widget _activePanel(ShoppingCompanionController controller) {
     final status = widget.scanning
         ? 'Scanning product…'
-        : controller.busy
-        ? 'Working on your answer…'
         : controller.loading
         ? 'Checking product…'
         : controller.preparingSpeech
         ? 'Preparing voice…'
         : controller.speaking
         ? 'Speaking — tap mic to interrupt'
+        : controller.busy
+        ? 'Working on your answer…'
         : controller.listening
         ? 'Listening — speak naturally'
         : controller.micPaused

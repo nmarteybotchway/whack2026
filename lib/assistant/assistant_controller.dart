@@ -207,6 +207,8 @@ class AssistantController extends ChangeNotifier {
     _notify();
     await initialize();
     if (!_valid(epoch)) return;
+    await stopListening();
+    if (!_valid(epoch)) return;
     await stopAudio();
     if (!_valid(epoch)) return;
     if (!hidden) messages.add(AssistantMessage(role: 'user', text: input));
@@ -717,6 +719,10 @@ Call request_camera_photo only when the specific product is unidentified, or the
       speechError = null;
       preparingSpeech = true;
       _notify();
+      // Claim the speaking turn before stopping recognition, so listeners cannot
+      // schedule another microphone session during the audio transition.
+      await stopListening();
+      if (!okay() || audioEpoch != _audioEpoch) return;
       await engine.setSpeechRate(voiceSettings.speechRate);
       if (!okay() || audioEpoch != _audioEpoch) return;
       if ((!sessionVoiceEnabled || _liveTts == null) &&
@@ -729,11 +735,17 @@ Call request_camera_photo only when the specific product is unidentified, or the
       }
       if (!okay() || audioEpoch != _audioEpoch) return;
       try {
-        await engine.speakWithProgress(
-          spoken,
-          locale: voiceSettings.locale,
-          onPlaybackStarted: playbackStarted,
-        );
+        await engine
+            .speakWithProgress(
+              spoken,
+              locale: voiceSettings.locale,
+              onPlaybackStarted: playbackStarted,
+            )
+            .timeout(
+              Duration(
+                milliseconds: (spoken.length * 150).clamp(15000, 300000),
+              ),
+            );
       } catch (e) {
         // The offline Kokoro engine failed to initialize (or speak). When the
         // controller owns the default engine, fall back to the device's
@@ -744,6 +756,9 @@ Call request_camera_photo only when the specific product is unidentified, or the
           rethrow;
         }
         if (!okay() || audioEpoch != _audioEpoch) return;
+        // Dispose the failed engine before fallback, including any synthesis or
+        // playback still running after a timeout.
+        engine.dispose();
         tts = PlatformTextToSpeechService();
         engine = tts;
         await engine.setSpeechRate(voiceSettings.speechRate);
@@ -759,14 +774,24 @@ Call request_camera_photo only when the specific product is unidentified, or the
           }
         }
         if (!okay() || audioEpoch != _audioEpoch) return;
-        await engine.speakWithProgress(
-          spoken,
-          locale: voiceSettings.locale,
-          onPlaybackStarted: playbackStarted,
-        );
+        await engine
+            .speakWithProgress(
+              spoken,
+              locale: voiceSettings.locale,
+              onPlaybackStarted: playbackStarted,
+            )
+            .timeout(
+              Duration(
+                milliseconds: (spoken.length * 150).clamp(15000, 300000),
+              ),
+            );
       }
     } catch (_) {
       if (_valid(epoch) && audioEpoch == _audioEpoch) {
+        try {
+          await engine.stop().timeout(const Duration(seconds: 2));
+        } catch (_) {}
+        if (!_valid(epoch) || audioEpoch != _audioEpoch) return;
         speechError = 'Voice playback failed. Tap Retry speech to try again.';
         error = speechError;
       }
