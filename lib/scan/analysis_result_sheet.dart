@@ -234,6 +234,11 @@ class _AnalysisResultSheetState extends State<AnalysisResultSheet> {
                             if (r.hasGeneralInfo) 'generalInfo': r.generalInfo,
                             if (r.alternatives.isNotEmpty)
                               'tryInstead': r.alternatives.take(3).toList(),
+                            if (r.alternatives.isNotEmpty &&
+                                r.alternativeBoostTotal.isNotEmpty)
+                              'alternativesProvide': r.alternativeBoostTotal
+                                  .map((n) => n.label)
+                                  .toList(),
                             if (r.boostsNutrients.isNotEmpty)
                               'boostsNutrients': r.boostsNutrients
                                   .map((n) => n.label)
@@ -758,6 +763,17 @@ class _RecommendationCardState extends State<_RecommendationCard> {
                   const SizedBox(height: 4),
                   for (final alt in r.alternatives.take(3))
                     Text('• $alt', style: theme.textTheme.bodyMedium),
+                  // Side note: which of the user's low nutrients these
+                  // alternatives together top up.
+                  if (r.alternativeBoostTotal.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      'Together these are also a good source of '
+                      '${r.alternativeBoostTotal.map((n) => n.label).join(', ')}'
+                      ', which your recent diet has been low in.',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ],
                 ],
               ],
             ),
