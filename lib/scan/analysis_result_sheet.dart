@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../assistant/assistant_controller.dart';
+import '../diet/swap_points.dart';
 import '../food/food_matcher.dart';
 import '../food/food_recommendation_service.dart';
 import '../food_news.dart';
@@ -860,9 +861,6 @@ class _RecommendationCardState extends State<_RecommendationCard> {
     if (context.mounted) Navigator.of(context).pop(kHomeTabOnSwap);
   }
 }
-
-/// Points awarded for picking a healthier alternative.
-const int kSwapPoints = 10;
 
 /// Home-page tab index returned when an alternative is chosen.
 const int kHomeTabOnSwap = 0;
