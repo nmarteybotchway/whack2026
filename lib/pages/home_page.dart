@@ -135,7 +135,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(_tabs[_index].label)),
+      // The home tab's garden runs edge to edge, behind the status bar and
+      // the bottom bar, so it has no app bar of its own.
+      extendBody: true,
+      extendBodyBehindAppBar: _index == 0,
+      appBar: _index == 0 ? null : AppBar(title: Text(_tabs[_index].label)),
       body: switch (_index) {
         // Keyed by scan count so the nutrient cards reload after a scan.
         0 => _HomeTab(key: ValueKey(_scans), user: widget.user),
@@ -268,24 +272,39 @@ class _HomeTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final name = user.displayName ?? user.email?.split('@').first ?? 'there';
-    return ListView(
-      padding: const EdgeInsets.all(16),
+    const shadow = [Shadow(blurRadius: 8, color: Colors.black38)];
+    return Stack(
+      // Expand to the full tab; otherwise the greeting Column (the only
+      // non-positioned child) sizes the Stack to the width of its text.
+      fit: StackFit.expand,
       children: [
-        Text(
-          'Hi, $name',
-          style: theme.textTheme.headlineMedium?.copyWith(
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          'Your health, in one place.',
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-        const SizedBox(height: 16),
         NutrientGarden(key: ValueKey(user.uid), userId: user.uid),
+        // Greeting overlaid on the sky, clear of the status bar.
+        SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Hi, $name',
+                  style: theme.textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                    shadows: shadow,
+                  ),
+                ),
+                Text(
+                  'Your health, in one place.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: Colors.white.withValues(alpha: .95),
+                    shadows: shadow,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }
