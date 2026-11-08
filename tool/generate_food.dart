@@ -87,6 +87,7 @@ String _food(Food f) =>
     'personalPrefs: {${f.personalPrefs.map((p) => 'Preference.${p.name}').join(', ')}}, '
     'localNews: ${_string(f.localNews)}, '
     'generalInfo: ${_string(f.generalInfo)}, '
+    'sources: ${_list(f.sources)}, '
     'nutrients: {${f.nutrients.entries.map((e) => 'Nutrient.${e.key.name}: ${e.value.toDouble()}').join(', ')}})';
 
 /// A camelCase identifier for [id] (`bread_(toast)` → `breadToast`), unique
