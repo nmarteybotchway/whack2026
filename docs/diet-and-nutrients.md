@@ -353,7 +353,7 @@ repaint without rebuilding widgets. `ValleyClock` turns those seconds into:
 | Cycle | Length | What changes |
 | --- | --- | --- |
 | Day/night | `dayLength` 48 s, 65 % daylight | Sun arcs left to right; sky keyed by sun height (night, twilight, golden, morning, noon); moon and twinkling stars at night; land lit through one `ColorFilter` (`BlendMode.modulate`) tint |
-| Seasons | `daysPerSeason` 3 days each | Spring blossom and petals, summer greens, autumn amber and falling leaves, winter snow, frosted trees and snowfall; each blends into the next during its last day's daylight |
+| Seasons | `daysPerSeason` 1 day/night cycle each | Spring blossom and petals, summer greens, autumn amber and falling leaves, winter snow, frosted trees and snowfall; each blends into the next overnight, so every sunrise opens on the next season |
 | Ambient | continuous | Clouds drift and wrap; birds fly by day; trees, crest conifers and grass sway in gusting wind; light streaks flow down the river under the reflected sun or moon |
 
 The scene opens just after sunrise in today's season (`ValleySeason.of`,
@@ -384,7 +384,7 @@ the tracker never disagree.
 | `test/diet/receipt_store_test.dart` | `ReceiptStore.dayWrite` increments each nutrient so same-day receipts add up; leaves `nutrition` out when there is nothing to add |
 | `test/diet/receipt_parser_test.dart` | price-only lines, single-line name+price, skip lines, skip keywords mid-name, quantity prefix, comma decimals/currency, unpaired names, `toMap`/`fromMap`, tax flag, glued price, qty-at-unit-price |
 | `test/garden/nutrient_score_service_test.dart` | empty insights score 0; all targets met score 1; half goals; sodium at, over and far over the limit; megadose clamping; `scoreFor` uses the injected loader |
-| `test/garden/sunrise_valley_test.dart` | month to season; each season opens just after sunrise; noon/midnight sun height; a season holds then turns in its last day's daylight; winter wraps to spring; a full year of frames paints without errors; reduced motion stops the ticker |
+| `test/garden/sunrise_valley_test.dart` | month to season; each season opens just after sunrise; noon/midnight sun height; a season holds through the day then turns overnight; winter wraps to spring; a full year of frames paints without errors; reduced motion stops the ticker |
 | `test/garden/nutrient_garden_test.dart` | trees at 0 while loading; empty-diet hint; error falls back to 0; a non-empty diet grows to the expected score (fake loader and `treesBuilder`) |
 | `test/diet/veryfi_service_test.dart` | line-item mapping, total-only items, multi-line descriptions from a real Veryfi response, signed headers and base64 body, `VeryfiException` on non-200 (uses `MockClient`) |
 

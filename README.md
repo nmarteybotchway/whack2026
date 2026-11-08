@@ -37,7 +37,7 @@ condition and don't want to read every label.
   with UK adult reference values (sodium is treated as a limit). The
   tracker opens from the History tab.
 - **Nutrient garden.** The home screen is a full-screen animated river
-  valley, with a day/night cycle and seasons that turn every few days, that
+  valley, with a day/night cycle and a new season every day, that
   grows lusher as your recent diet meets the same vitamin and mineral targets as the
   tracker, and shrink when you go over the sodium limit. With no diet data
   yet, a hint suggests scanning a receipt.
