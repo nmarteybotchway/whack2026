@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart';
 
 import '../openrouter/openrouter_service.dart';
 import '../services/kokoro_tts_factory.dart';
-import '../services/live_voice_service.dart';
 import '../services/speech_to_text_service.dart';
 import '../services/text_to_speech_service.dart';
 import 'assistant_models.dart';
@@ -17,20 +16,24 @@ class AssistantController extends ChangeNotifier {
     OpenRouterService? ai,
     SpeechToTextService? speech,
     TextToSpeechService? tts,
-    TextToSpeechService? liveTts,
+    this._liveTts,
   }) : _ownsAi = ai == null,
        _ownsTts = tts == null,
        ai = ai ?? OpenRouterService(),
        speech = speech ?? SpeechToTextService(),
-       tts = tts ?? KokoroTtsService(),
-       _liveTts = liveTts ?? tts ?? LiveVoiceService();
+       tts = tts ?? KokoroTtsService();
 
   final AssistantDataSource data;
   final OpenRouterService ai;
   final SpeechToTextService speech;
   TextToSpeechService tts;
-  final TextToSpeechService _liveTts;
-  TextToSpeechService get _voiceEngine => sessionVoiceEnabled ? _liveTts : tts;
+
+  /// Optional separate engine for shopping sessions; by default sessions use
+  /// the same Kokoro voice as the assistant.
+  final TextToSpeechService? _liveTts;
+  TextToSpeechService get _sessionTts => _liveTts ?? tts;
+  TextToSpeechService get _voiceEngine =>
+      sessionVoiceEnabled ? _sessionTts : tts;
   final bool _ownsTts;
   AssistantSettings settings = const AssistantSettings();
   final List<AssistantMessage> messages = [];
@@ -74,9 +77,10 @@ class AssistantController extends ChangeNotifier {
   bool _valid(int epoch) => !_disposed && epoch == _epoch;
 
   Future<void> prepareLiveVoice() =>
-      _liveTts.prepare().timeout(const Duration(seconds: 8));
+      // Kokoro extracts and loads a large model on first use.
+      _sessionTts.prepare().timeout(const Duration(seconds: 45));
   void configureLiveVoice(bool enabled) =>
-      _liveTts.setConversationMode(enabled);
+      _sessionTts.setConversationMode(enabled);
 
   Future<void> initialize() => _initialization ??= _loadSettings();
 
@@ -630,7 +634,7 @@ Call request_camera_photo only when the specific product is unidentified, or the
     try {
       await Future.wait([
         tts.stop(),
-        if (!identical(tts, _liveTts)) _liveTts.stop(),
+        if (_liveTts case final live? when !identical(tts, live)) live.stop(),
       ]);
     } catch (_) {}
     speaking = false;
@@ -708,7 +712,8 @@ Call request_camera_photo only when the specific product is unidentified, or the
       _notify();
       await engine.setSpeechRate(voiceSettings.speechRate);
       if (!okay() || audioEpoch != _audioEpoch) return;
-      if (!sessionVoiceEnabled && voiceSettings.voiceName.isNotEmpty) {
+      if ((!sessionVoiceEnabled || _liveTts == null) &&
+          voiceSettings.voiceName.isNotEmpty) {
         try {
           await engine.setVoice(voiceSettings.voiceName, voiceSettings.locale);
         } catch (_) {
@@ -726,14 +731,17 @@ Call request_camera_photo only when the specific product is unidentified, or the
         // The offline Kokoro engine failed to initialize (or speak). When the
         // controller owns the default engine, fall back to the device's
         // system TTS once, then continue using it for later utterances.
-        if (sessionVoiceEnabled || !_ownsTts || engine is! KokoroTtsService) {
+        if (!identical(engine, tts) ||
+            !_ownsTts ||
+            engine is! KokoroTtsService) {
           rethrow;
         }
         if (!okay() || audioEpoch != _audioEpoch) return;
         tts = PlatformTextToSpeechService();
         engine = tts;
         await engine.setSpeechRate(voiceSettings.speechRate);
-        if (!sessionVoiceEnabled && voiceSettings.voiceName.isNotEmpty) {
+        if ((!sessionVoiceEnabled || _liveTts == null) &&
+            voiceSettings.voiceName.isNotEmpty) {
           try {
             await engine.setVoice(
               voiceSettings.voiceName,
@@ -896,7 +904,7 @@ Call request_camera_photo only when the specific product is unidentified, or the
     unawaited(speech.cancel());
     unawaited(tts.stop());
     tts.dispose();
-    if (!identical(tts, _liveTts)) _liveTts.dispose();
+    if (_liveTts case final live? when !identical(tts, live)) live.dispose();
     if (_ownsAi) ai.close();
     super.dispose();
   }

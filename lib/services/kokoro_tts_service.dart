@@ -30,6 +30,11 @@ class KokoroTtsService extends TextToSpeechService {
   /// Kokoro v0.19 outputs 24 kHz mono float PCM.
   static const int _sampleRate = 24000;
 
+  /// CPU threads for synthesis. Measured on a Snapdragon 8 Gen 3 at 6
+  /// threads: real-time factor ~0.5-0.7 for full sentences, ~1.0 for short
+  /// opening phrases. Beyond 6, work spills onto the efficiency cores.
+  static const int _numThreads = 6;
+
   /// Speaker ID map for kokoro-en-v0_19 (11 built-in voices).
   static const Map<String, int> voiceIds = {
     'af': 0,
@@ -216,7 +221,7 @@ class KokoroTtsService extends TextToSpeechService {
               voices: paths[1],
               tokens: paths[2],
             ),
-            numThreads: 2,
+            numThreads: _numThreads,
           ),
           maxNumSentences: 1,
         ),
