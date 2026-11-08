@@ -53,7 +53,7 @@ a centre scan button:
 
 | Index | Tab | Body widget |
 | --- | --- | --- |
-| 0 | Home | `_HomeTab`: greeting, `NutrientGapsCard` (`lib/diet/nutrient_tracker_page.dart`), `NutrientGarden(userId:)` (score from `NutrientScoreService`; reloads after a scan) |
+| 0 | Home | `_HomeTab`: greeting, `NutrientGarden(userId:)` (score from `NutrientScoreService`; reloads after a scan) |
 | 1 | History | `DietHistoryPage` (`lib/diet/diet_history_page.dart`) |
 | — | Scan FAB | pushes `ScanPage(userId:, assistant:)` (`lib/scan/scan_page.dart`) |
 | 2 | Assistant | `AssistantPage(controller:)` (`lib/assistant/assistant_page.dart`) |
@@ -74,7 +74,6 @@ a centre scan button:
 
 | From | Opens |
 | --- | --- |
-| Home tab → `NutrientGapsCard` | `NutrientTrackerPage` |
 | History tab (`DietHistoryPage`) | `ReceiptScanPage` (receipt camera), `NutrientTrackerPage`; also streams `users/{uid}/foodEntries` |
 | Scan FAB (`ScanPage`) | `showAnalysisResult` → `AnalysisResultSheet` (uses `FoodNewsService` and `FoodRecommendationService`); can open the assistant with the scanned product |
 | Settings → Appearance | `AppearancePage` (`lib/appearance/appearance_page.dart`) |

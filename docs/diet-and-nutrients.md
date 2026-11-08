@@ -3,7 +3,7 @@
 Receipts are photographed, turned into food names, stored per day under the
 user, enriched with vitamins and minerals from USDA FoodData Central, and kept
 for a sliding two-week window. The window, together with foods logged through
-the assistant, feeds the nutrient tracker, the home-screen gaps card, and the
+the assistant, feeds the nutrient tracker, the home-screen garden, and the
 scan recommender. A separate nutrient garden on the home page shows three Rive
 trees.
 
@@ -17,7 +17,7 @@ trees.
 | `lib/diet/nutrition_service.dart` | `NutritionService`: USDA lookup, `nutritionCache`, unit normalisation |
 | `lib/diet/diet_window_service.dart` | `DietDay`, `DietStorage`, `FirestoreDietStorage`, `DietWindowService` (14-day window + pruning) |
 | `lib/diet/nutrient_insights.dart` | `nutrientTargets`, `NutrientStatus`, `NutrientCoverage`, `NutrientInsights` |
-| `lib/diet/nutrient_tracker_page.dart` | `NutrientTrackerPage` and the home-screen `NutrientGapsCard` |
+| `lib/diet/nutrient_tracker_page.dart` | `NutrientTrackerPage` (opened from the History tab) |
 | `lib/diet/diet_history_page.dart` | `DietHistoryPage`: receipt days and manual food logs |
 | `lib/food/nutrient.dart` | `Nutrient` enum: shorthand ids, units, reference amounts |
 | `lib/garden/nutrient_garden.dart` | `NutrientGarden`: three Rive trees |
@@ -47,7 +47,6 @@ flowchart TD
     Window --> Insights[NutrientInsights.load]
     Logged --> Insights
     Insights --> Tracker[NutrientTrackerPage]
-    Insights --> GapsCard[NutrientGapsCard on home]
     Insights --> Recs[FoodRecommendationService<br/>low/high nutrients]
     Window --> History[DietHistoryPage]
     Entries --> History
@@ -299,8 +298,6 @@ footnote.
   4 gaps with "Try: <sources>", plus a sodium warning when `high`), and a
   row per nutrient with average, percentage of target, status label, daily
   bars, and good sources. Pull-to-refresh reloads.
-- `NutrientGapsCard` (home page): 14-day insights, up to 5 gap chips
-  "<label> <pct>%"; reloads after returning from the tracker.
 - `FoodRecommendationService.parseProfile` maps `lacking`/`low` to
   `lowNutrients` and `high` to `highNutrients` (see `docs/recommendations.md`).
 
@@ -349,7 +346,7 @@ the centre tree. Tests replace the Rive trees through `treesBuilder`.
 ### `NutrientScoreService`
 
 Scores come from the same `nutrientTargets` as the tracker, so the garden and
-the gaps card never disagree.
+the tracker never disagree.
 
 - `scoreFromInsights(insights)`: 0 when `insights.isEmpty`; otherwise the mean
   over every nutrient in `insights.coverage`, clamped to 0..1.

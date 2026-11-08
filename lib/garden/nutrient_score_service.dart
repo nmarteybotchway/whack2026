@@ -4,7 +4,7 @@ import '../diet/nutrient_insights.dart';
 /// targets, as a single 0..1 progress value for the garden.
 ///
 /// Targets come from [nutrientTargets] via [NutrientInsights], so the garden,
-/// the nutrient tracker and the gaps card all agree on what "enough" means.
+/// the nutrient tracker and the recommender all agree on what "enough" means.
 /// The score is computed on demand and never stored.
 class NutrientScoreService {
   NutrientScoreService({
