@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
@@ -6,6 +8,7 @@ import 'diet_window_service.dart';
 import 'nutrient_tracker_page.dart';
 import 'receipt_parser.dart';
 import 'receipt_scan_page.dart';
+import 'swap_points.dart' show kSwapPoints;
 
 /// Diet history: scan grocery receipts and browse the stored diet, organised
 /// by the day the food was bought.
@@ -18,13 +21,44 @@ class DietHistoryPage extends StatefulWidget {
   State<DietHistoryPage> createState() => _DietHistoryPageState();
 }
 
-class _DietHistoryPageState extends State<DietHistoryPage> {
+class _DietHistoryPageState extends State<DietHistoryPage>
+    with WidgetsBindingObserver {
   /// Created once so rebuilds keep the same stream, and shared with the scan
   /// page so a saved receipt wakes this page's stream straight away.
   late final DietWindowService _diet = DietWindowService(widget.userId);
   late final Stream<List<DietDay>> _days = _diet.recentDaysStream();
 
+  /// Swaps banked this session toward the weekly goal ring. Seeded to a
+  /// starting value and reset whenever the app leaves the foreground so a
+  /// hackathon demo always has a fresh-looking goal without waiting a week.
+  int _weekSwaps = 3;
+
+  static const int _weeklyGoal = 10;
+
   String get userId => widget.userId;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Leaving the app restarts the weekly goal so the ring never sits full;
+    // the leaderboard still shows the real banked total.
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      setState(() => _weekSwaps = 3);
+    }
+  }
 
   Future<void> _scan(BuildContext context) async {
     if (!ReceiptScanPage.isSupported) {
@@ -107,26 +141,38 @@ class _DietHistoryPageState extends State<DietHistoryPage> {
           'grouped by the day you got them, and the last two weeks are kept.',
         ),
         const SizedBox(height: 12),
-        FilledButton.icon(
-          onPressed: () => _scan(context),
-          icon: const Icon(Icons.receipt_long),
-          label: const Text('Scan receipt'),
-        ),
-        const SizedBox(height: 8),
-        OutlinedButton.icon(
-          onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => NutrientTrackerPage(userId: userId),
+        _WeeklyGoalCard(goal: _weeklyGoal, base: _weekSwaps),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: IconButton.filledTonal(
+                onPressed: () => _scan(context),
+                tooltip: 'Scan receipt',
+                icon: const Icon(Icons.receipt_long),
+              ),
             ),
-          ),
-          icon: const Icon(Icons.insights),
-          label: const Text('Nutrient tracker'),
-        ),
-        const SizedBox(height: 8),
-        OutlinedButton.icon(
-          onPressed: () => showLeaderboardModal(context, userId),
-          icon: const Icon(Icons.emoji_events_outlined),
-          label: const Text('Leaderboard'),
+            const SizedBox(width: 8),
+            Expanded(
+              child: IconButton.filledTonal(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => NutrientTrackerPage(userId: userId),
+                  ),
+                ),
+                tooltip: 'Nutrient tracker',
+                icon: const Icon(Icons.insights),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: IconButton.filledTonal(
+                onPressed: () => showLeaderboardModal(context, userId),
+                tooltip: 'Leaderboard',
+                icon: const Icon(Icons.emoji_events_outlined),
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 16),
         DietSummaryCard(userId: userId),
@@ -303,6 +349,127 @@ class _NutrientBox extends StatelessWidget {
               '$amount${unit == 'UG' ? 'µg' : 'mg'}',
               style: theme.textTheme.labelSmall?.copyWith(
                 color: colors.onSecondaryContainer,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Weekly healthy-swap goal card: a progress ring that fills as points are
+/// banked, listening live to the user's Firestore total.
+class _WeeklyGoalCard extends StatefulWidget {
+  const _WeeklyGoalCard({required this.base, required this.goal});
+
+  /// Demo starting offset so the ring begins partway through.
+  final int base;
+
+  final int goal;
+
+  @override
+  State<_WeeklyGoalCard> createState() => _WeeklyGoalCardState();
+}
+
+class _WeeklyGoalCardState extends State<_WeeklyGoalCard> {
+  /// Banked swap points from Firestore; null until the first snapshot.
+  int? _bankedPoints;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _sub;
+
+  @override
+  void initState() {
+    super.initState();
+    final page = context.findAncestorStateOfType<_DietHistoryPageState>();
+    if (page != null) {
+      _sub = FirebaseFirestore.instance
+          .collection('users')
+          .doc(page.userId)
+          .snapshots()
+          .listen(
+            (snap) {
+              if (!mounted) return;
+              final points = snap.data()?['swapPoints'];
+              setState(
+                () => _bankedPoints = points is num ? points.toInt() : 0,
+              );
+            },
+            onError: (_) {},
+          );
+    }
+  }
+
+  @override
+  void dispose() {
+    unawaited(_sub?.cancel());
+    super.dispose();
+  }
+
+  int get _progress {
+    // Each banked swap is worth kSwapPoints points; the session base offsets
+    // the ring start.
+    final swaps = (_bankedPoints ?? 0) ~/ kSwapPoints;
+    return (widget.base + swaps).clamp(0, widget.goal);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final clamped = _progress;
+    final done = clamped >= widget.goal;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 72,
+              height: 72,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  CircularProgressIndicator(
+                    value: clamped / widget.goal,
+                    strokeWidth: 7,
+                    strokeCap: StrokeCap.round,
+                    backgroundColor: colors.surfaceContainerHighest,
+                    valueColor: AlwaysStoppedAnimation(
+                      done ? Colors.green.shade600 : colors.primary,
+                    ),
+                  ),
+                  Center(
+                    child: done
+                        ? Icon(Icons.check, color: Colors.green.shade600)
+                        : Text(
+                            '$clamped/${widget.goal}',
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Weekly swap goal', style: theme.textTheme.titleMedium),
+                  const SizedBox(height: 2),
+                  Text(
+                    done
+                        ? 'Goal hit! Every extra swap still counts.'
+                        : '${widget.goal - clamped} more healthy '
+                            '${widget.goal - clamped == 1 ? 'swap' : 'swaps'} '
+                            'this week. Pick a "Try instead" bar after '
+                            'scanning.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
