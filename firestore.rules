@@ -215,6 +215,26 @@ service cloud.firestore {
         && request.resource.data.foods.size() <= 500
         && request.resource.data.foods[0] is string;
     }
+    // Cache for the AI diet review shown on the history page.
+    match /users/{uid}/dietSummary/{summaryId} {
+      allow read, delete: if owner(uid);
+      allow create, update: if owner(uid)
+        && request.resource.data.keys().hasAll(['summary', 'generatedAt'])
+        && request.resource.data.keys().hasOnly(['summary', 'generatedAt'])
+        && request.resource.data.summary is map
+        && request.resource.data.summary.keys().hasAll(
+          ['rating', 'headline', 'good_points', 'gaps'])
+        && request.resource.data.summary.keys().hasOnly(
+          ['rating', 'headline', 'good_points', 'gaps'])
+        && request.resource.data.summary.rating is string
+        && request.resource.data.summary.headline is string
+        && request.resource.data.summary.headline.size() <= 300
+        && request.resource.data.summary.good_points is list
+        && request.resource.data.summary.good_points.size() <= 20
+        && request.resource.data.summary.gaps is list
+        && request.resource.data.summary.gaps.size() <= 20
+        && request.resource.data.generatedAt == request.time;
+    }
     match /nutritionCache/{foodName} {
       allow read: if request.auth != null;
       allow create, update: if request.auth != null
