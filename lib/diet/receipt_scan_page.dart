@@ -3,9 +3,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 
+import 'diet_window_service.dart';
 import 'receipt_parser.dart';
 import 'receipt_review_sheet.dart';
-import 'receipt_store.dart';
+import 'veryfi_service.dart';
 
 /// Camera page that photographs a receipt, reads it with the on-device ML Kit
 /// text recogniser, and stores the items in the user's Firestore account.
@@ -13,9 +14,13 @@ import 'receipt_store.dart';
 /// Resolves to the number of items saved when the receipt is stored, or null
 /// if the user backs out.
 class ReceiptScanPage extends StatefulWidget {
-  const ReceiptScanPage({super.key, required this.userId});
+  const ReceiptScanPage({super.key, required this.userId, this.diet});
 
   final String userId;
+
+  /// Window to save through; pass the caller's instance so its
+  /// [DietWindowService.recentDaysStream] refreshes after the save.
+  final DietWindowService? diet;
 
   /// The camera plugin is only available on Android and iOS.
   static bool get isSupported =>
@@ -120,12 +125,18 @@ class _ReceiptScanPageState extends State<ReceiptScanPage>
         return;
       }
 
-      final reviewed = await showReceiptReview(context, items);
-      if (reviewed == null || reviewed.isEmpty || !mounted) return;
 
-      await ReceiptStore(widget.userId).save(reviewed);
+      final reviewed = await showReceiptReview(context, items);
+      if (reviewed == null || reviewed.items.isEmpty || !mounted) return;
+
+      await (widget.diet ?? DietWindowService(widget.userId)).save(reviewed.items, reviewed.day);
       if (!mounted) return;
-      Navigator.of(context).pop(reviewed.length);
+      Navigator.of(context).pop(reviewed.items.length);
+    } on DietDayOutOfWindowException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.message)));
+      }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
@@ -133,9 +144,24 @@ class _ReceiptScanPageState extends State<ReceiptScanPage>
     }
   }
 
+  /// Reads the receipt photo into items. Veryfi's API does the OCR and
+  /// understanding in one step; if it is unavailable (no network, out of
+  /// credits, bad credentials) the on-device ML Kit fallback takes over.
+  Future<List<ReceiptItem>> _recognise(XFile photo) async {
+    final bytes = await photo.readAsBytes();
+    try {
+      final items = await VeryfiService()
+          .processReceipt(bytes, 'receipt-${DateTime.now().millisecondsSinceEpoch}.jpg');
+      if (items.isNotEmpty) return items;
+    } on Exception catch (e) {
+      debugPrint('Veryfi failed, falling back to ML Kit: $e');
+    }
+    return _recogniseLocally(photo);
+  }
+
   /// Runs the on-device ML Kit text recogniser over the photo and parses the
   /// receipt text into items.
-  Future<List<ReceiptItem>> _recognise(XFile photo) async {
+  Future<List<ReceiptItem>> _recogniseLocally(XFile photo) async {
     final inputImage = InputImage.fromFilePath(photo.path);
     final recognizer = TextRecognizer(script: TextRecognitionScript.latin);
     try {
@@ -195,8 +221,8 @@ class _ReceiptScanPageState extends State<ReceiptScanPage>
               child: FloatingActionButton(
                 tooltip: 'Capture receipt',
                 shape: const CircleBorder(),
-                backgroundColor: Colors.green,
-                foregroundColor: Colors.white,
+                backgroundColor: Theme.of(context).colorScheme.primary,
+                foregroundColor: Theme.of(context).colorScheme.onPrimary,
                 onPressed: _busy ? null : _capture,
                 child: _busy
                     ? const CircularProgressIndicator(color: Colors.white)

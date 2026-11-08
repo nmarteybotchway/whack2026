@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import 'health_tracking_controller.dart';
+import 'heart_rate_page.dart';
 
 class BloodPressurePage extends StatefulWidget {
   const BloodPressurePage({super.key, required this.tracking});
@@ -61,6 +62,21 @@ class _BloodPressurePageState extends State<BloodPressurePage> {
             'Checks the last 29 days, then refreshes every minute while the app is open. Readings can be delayed; Samsung watch blood pressure may not be exported.',
           ),
           const SizedBox(height: 16),
+          Card(
+            child: ListTile(
+              leading: Icon(
+                Icons.favorite,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              title: const Text('Heart rate'),
+              subtitle: const Text('View readings from Health Connect'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const HeartRatePage()),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
           Text(tracking.status),
           if (tracking.busy) const LinearProgressIndicator(),
           const SizedBox(height: 8),

@@ -65,9 +65,9 @@ Future<Map<String, dynamic>> identifyFoodProduct({
     })().timeout(timeout);
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      // Avoid echoing uploaded content or credentials from a response body.
       throw FoodBaseException(
-        'Product recognition request failed.',
+        _messageFromBody(response.bodyBytes) ??
+            'Product recognition request failed.',
         statusCode: response.statusCode,
       );
     }
@@ -85,4 +85,21 @@ Future<Map<String, dynamic>> identifyFoodProduct({
   } finally {
     if (client == null) transport.close();
   }
+}
+
+/// The API's own human-readable error, when the body carries one (e.g. the
+/// 402 "Insufficient credits" message) and it is short enough to be one.
+String? _messageFromBody(List<int> bodyBytes) {
+  if (bodyBytes.isEmpty || bodyBytes.length > 2048) return null;
+  try {
+    final body = jsonDecode(utf8.decode(bodyBytes));
+    if (body is! Map) return null;
+    final message = body['message'] ?? body['error'];
+    if (message is String && message.trim().isNotEmpty) {
+      return message.trim();
+    }
+  } on FormatException {
+    // Not JSON; fall back to the generic message.
+  }
+  return null;
 }

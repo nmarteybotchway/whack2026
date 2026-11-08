@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../theme.dart';
 import 'food_verdict.dart';
 
 /// Shows a [FoodVerdict] in a modal bottom sheet over the current page.
@@ -22,7 +23,8 @@ class FoodVerdictSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final color = verdict.pass ? Colors.green : Colors.red;
+    final status = AppTheme.statusColors;
+    final color = verdict.pass ? status.good : status.bad;
     return SafeArea(
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),

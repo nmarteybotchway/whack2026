@@ -1,19 +1,33 @@
+import 'dart:async';
+
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../assistant/assistant_controller.dart';
+import '../assistant/assistant_page.dart';
+import '../food/food_recommendation_service.dart';
+import '../food_news.dart';
 import 'analysis_result_sheet.dart';
 import 'camera_analysis.dart';
-import 'scan_config.dart';
+import 'shopping_companion_briefing.dart';
+import 'shopping_companion_controller.dart';
+import 'shopping_companion_overlay.dart';
 
-/// Full-screen camera page that feeds frames to [CameraAnalysis].
+/// Full-screen camera page for photographing and identifying packaged items.
 ///
-/// Whether every frame is analysed or only the frame after a button press is
-/// decided by [scanMode].
+/// Photos are captured on demand from the capture button or assistant.
 class ScanPage extends StatefulWidget {
-  const ScanPage({super.key});
+  const ScanPage({super.key, this.userId, this.demo = false, this.assistant});
 
-  /// The image stream is only available on Android and iOS.
+  final String? userId;
+  final AssistantController? assistant;
+
+  /// Retained for source compatibility with the old gate demo route.
+  @Deprecated('ScanPage now captures only on demand.')
+  final bool demo;
+
+  /// The camera is supported on Android and iOS.
   static bool get isSupported =>
       !kIsWeb &&
       (defaultTargetPlatform == TargetPlatform.android ||
@@ -27,29 +41,68 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
   CameraController? _controller;
   CameraAnalysis? _analysis;
   String? _error;
+  ShoppingCompanionController? _companion;
+  AnalysisResult? _lastResult;
+  DateTime? _lastScanAt;
+  bool _companionWasActive = false;
+  bool _showingDetails = false;
+  bool _assistantProductUpdatePending = false;
+  int _foregroundEpoch = 0;
 
-  /// True while [CameraAnalysis.analyse] is running; new frames are dropped.
+  /// True while a still photo is being analysed.
   bool _analysing = false;
 
-  /// Button mode: send the next frame that arrives to the analysis.
-  bool _captureNext = false;
+  bool get _interactionBusy {
+    final companion = _companion;
+    return companion != null &&
+        companion.active &&
+        (companion.committing || companion.pendingAction != null);
+  }
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    final assistant = widget.assistant;
+    assistant?.setCameraPhotoRequester(_requestCameraPhoto);
+    assistant?.addListener(_onAssistantChanged);
+    final userId = widget.userId;
+    if (assistant != null && userId != null) {
+      final briefings = ProductBriefingService(userId: userId);
+      _companion = ShoppingCompanionController(
+        assistant: assistant,
+        briefingLoader: briefings.describe,
+        onShowDetails: _showDetails,
+      )..addListener(_onCompanionChanged);
+    }
     if (ScanPage.isSupported) _startCamera();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _companion?.removeListener(_onCompanionChanged);
+    _companion?.dispose();
+    widget.assistant?.removeListener(_onAssistantChanged);
+    widget.assistant?.setCameraPhotoRequester(null);
+    widget.assistant?.suspend();
     _stopCamera();
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    final interrupted =
+        state == AppLifecycleState.inactive &&
+        !(widget.assistant?.requestingMicrophonePermission ?? false);
+    if (interrupted ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      _foregroundEpoch++;
+      _companion?.pause();
+      widget.assistant?.suspend();
+    }
     // The camera must be released when the app goes to the background. Skip
     // this while the camera is still starting: the permission dialog also
     // makes the app inactive, and disposing mid-initialise breaks the plugin.
@@ -59,6 +112,34 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
       if (mounted) setState(() {});
     } else if (state == AppLifecycleState.resumed && _controller == null) {
       _startCamera();
+    }
+  }
+
+  void _onCompanionChanged() {
+    if (!mounted) return;
+    final active = _companion?.active ?? false;
+    if (active != _companionWasActive) {
+      _companionWasActive = active;
+      if (active && _lastResult?.identification != null) {
+        unawaited(
+          _companion!.updateProduct(
+            _lastResult!.identification,
+            scannedAt: _lastScanAt,
+          ),
+        );
+      }
+    }
+    setState(() {});
+  }
+
+  void _onAssistantChanged() {
+    final companion = _companion;
+    final result = _lastResult?.identification;
+    if (_assistantProductUpdatePending &&
+        !(widget.assistant?.busy ?? false) &&
+        companion?.active == true) {
+      _assistantProductUpdatePending = false;
+      unawaited(companion!.updateProduct(result, scannedAt: _lastScanAt));
     }
   }
 
@@ -81,11 +162,8 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
       );
       _controller = controller;
       await controller.initialize();
-      // Both modes run the stream; button mode just ignores frames until the
-      // button is pressed, so a capture is the very next preview frame.
-      await controller.startImageStream(_onFrame);
       if (!mounted || _controller != controller) return;
-      final analysis = CameraAnalysis(camera: camera);
+      final analysis = CameraAnalysis();
       setState(() {
         _analysis = analysis;
         _error = null;
@@ -109,37 +187,163 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
     _controller = null;
     _analysis?.dispose();
     _analysis = null;
-    _captureNext = false;
   }
 
-  Future<void> _onFrame(CameraImage frame) async {
-    final analysis = _analysis;
-    if (analysis == null || _analysing) return;
-    if (scanMode == ScanMode.button) {
-      if (!_captureNext) return;
-      _captureNext = false;
-    }
+  void _captureFromButton() {
+    unawaited(_capture().then<void>((_) {}));
+  }
 
-    // Only button mode shows busy state; avoid rebuilding on every streamed
-    // frame.
-    final showBusy = scanMode == ScanMode.button;
+  Future<Map<String, Object?>> _requestCameraPhoto() =>
+      _capture(fromAssistant: true);
+
+  Future<Map<String, Object?>> _capture({bool fromAssistant = false}) async {
+    final controller = _controller;
+    final analysis = _analysis;
+    if (controller == null ||
+        analysis == null ||
+        _analysing ||
+        _showingDetails ||
+        _interactionBusy) {
+      return {'available': false, 'error': 'Camera is busy or unavailable.'};
+    }
     _analysing = true;
-    if (showBusy) setState(() {});
-    final AnalysisResult result;
+    final scannedAt = DateTime.now().toUtc();
+    setState(() {});
+    if (!fromAssistant) await _companion?.scanning();
+    if (!mounted || _controller != controller) {
+      _analysing = false;
+      return {'available': false, 'error': 'Camera is no longer available.'};
+    }
+    if (!fromAssistant) {
+      widget.assistant?.setCurrentProduct({
+        'status': 'scanning',
+        'scannedAt': DateTime.now().toUtc().toIso8601String(),
+      });
+    }
+    AnalysisResult result;
     try {
-      result = await analysis.analyse(frame);
+      final photo = await controller.takePicture();
+      result = await analysis.analyse(await photo.readAsBytes());
+    } catch (error) {
+      debugPrint('Product scan failed: $error');
+      result = const AnalysisResult(
+        error: 'Could not identify this photo. Check your connection and try again.',
+      );
     } finally {
       _analysing = false;
-      if (showBusy && mounted) setState(() {});
+      if (mounted) setState(() {});
     }
 
-    // Stream mode analyses continuously, so only button presses pop up results.
-    if (scanMode == ScanMode.button && mounted) {
-      await showAnalysisResult(context, result);
+    if (mounted && _controller == controller) {
+      _lastResult = result;
+      _lastScanAt = scannedAt;
+      final product = result.identification;
+      if (!fromAssistant) {
+        widget.assistant?.setCurrentProduct({
+          'status': product?.status ?? 'unavailable',
+          'scannedAt': scannedAt.toIso8601String(),
+          if (product != null) ...{
+            'name': product.displayName,
+            'productName': product.productName,
+            'brand': product.brand,
+            'variant': product.variant,
+            'packageSize': product.packageSize,
+            'gtin': product.gtin,
+            'catalogProductId': product.catalogProductId,
+            'confidence': product.confidence,
+            'evidence': product.evidence,
+            'uncertainties': product.uncertainties,
+          },
+          if (result.error != null) 'error': result.error,
+        });
+      }
+      Map<String, Object?>? assessment;
+      if (fromAssistant && (_companion?.active ?? false)) {
+        // Keep the assistant's tool turn alive. Applying this product to the
+        // companion is deferred until that turn finishes because a new
+        // product normally cancels an in-flight companion turn.
+        _assistantProductUpdatePending = true;
+        if (product != null) assessment = await _companion!.assess(product);
+      } else if (_companion?.active ?? false) {
+        unawaited(_companion!.updateProduct(product, scannedAt: scannedAt));
+      } else if (!fromAssistant) {
+        await _showResult(result);
+      }
+      return {
+        'available': product != null,
+        'scannedAt': scannedAt.toIso8601String(),
+        if (product != null) ...{
+          'status': product.status,
+          'name': product.displayName,
+          'productName': product.productName,
+          'brand': product.brand,
+          'variant': product.variant,
+          'packageSize': product.packageSize,
+          'gtin': product.gtin,
+          'catalogProductId': product.catalogProductId,
+          'confidence': product.confidence,
+          'evidence': product.evidence,
+          'uncertainties': product.uncertainties,
+        },
+        'assessment': ?assessment,
+        if (result.error != null) 'error': result.error,
+      };
+    }
+    return {'available': false, 'error': 'Camera is no longer available.'};
+  }
+
+  Future<bool> _showResult(AnalysisResult result) async {
+    final tab = await showAnalysisResult(
+      context,
+      result,
+      newsService: FoodNewsService(),
+      recommendationService: widget.userId == null
+          ? null
+          : FoodRecommendationService(),
+      userId: widget.userId,
+      assistant: widget.assistant,
+    );
+    if (tab != null && mounted) {
+      Navigator.of(context).pop(tab);
+      return true;
+    }
+    return false;
+  }
+
+  Future<void> _showDetails() async {
+    final result = _lastResult;
+    if (result == null || _showingDetails || _analysing) return;
+    final wasActive = _companion?.active ?? false;
+    final foregroundEpoch = _foregroundEpoch;
+    _showingDetails = true;
+    await _companion?.pause();
+    if (!mounted) return;
+    final leaving = await _showResult(result);
+    _showingDetails = false;
+    if (!mounted || leaving) return;
+    if (wasActive &&
+        foregroundEpoch == _foregroundEpoch &&
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+      await _companion?.start();
     }
   }
 
-  void _capture() => _captureNext = true;
+  Future<void> _openAssistant() async {
+    final assistant = widget.assistant;
+    if (assistant == null || _analysing) return;
+    await _companion?.pause();
+    await assistant.initialize();
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => Scaffold(
+          appBar: AppBar(title: const Text('Shopping assistant')),
+          body: AssistantPage(controller: assistant),
+        ),
+      ),
+    );
+    await assistant.suspend();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -149,6 +353,14 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
         title: const Text('Scan'),
+        actions: [
+          if (widget.assistant != null)
+            IconButton(
+              tooltip: 'Open full conversation',
+              onPressed: _analysing ? null : _openAssistant,
+              icon: const Icon(Icons.chat_bubble_outline),
+            ),
+        ],
       ),
       body: _buildBody(),
     );
@@ -165,25 +377,48 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
       return const Center(child: CircularProgressIndicator());
     }
 
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Center(child: CameraPreview(controller)),
-        Positioned(
-          left: 0,
-          right: 0,
-          bottom: 32,
-          child: Center(
-            child: switch (scanMode) {
-              ScanMode.stream => const _StreamIndicator(),
-              ScanMode.button => _CaptureButton(
-                busy: _analysing,
-                onPressed: _capture,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
+        final panelHeight = keyboardOpen
+            ? (constraints.maxHeight - 24).clamp(0.0, constraints.maxHeight)
+            : (constraints.maxHeight - 132).clamp(
+                0.0,
+                constraints.maxHeight * .60,
+              );
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            Center(child: CameraPreview(controller)),
+            if (_companion case final companion?)
+              Positioned(
+                left: 12,
+                right: 12,
+                bottom: keyboardOpen ? 12 : 120,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: panelHeight),
+                  child: ShoppingCompanionOverlay(
+                    controller: companion,
+                    scanning: _analysing,
+                    onShowDetails: _lastResult == null ? null : _showDetails,
+                  ),
+                ),
               ),
-            },
-          ),
-        ),
-      ],
+            if (!keyboardOpen)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 32,
+                child: Center(
+                  child: _CaptureButton(
+                    busy: _analysing || _interactionBusy,
+                    onPressed: _captureFromButton,
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }
@@ -201,25 +436,13 @@ class _CaptureButton extends StatelessWidget {
       child: FloatingActionButton(
         tooltip: 'Analyse frame',
         shape: const CircleBorder(),
-        backgroundColor: Colors.green,
-        foregroundColor: Colors.white,
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        foregroundColor: Theme.of(context).colorScheme.onPrimary,
         onPressed: busy ? null : onPressed,
         child: busy
             ? const CircularProgressIndicator(color: Colors.white)
             : const Icon(Icons.camera_alt, size: 32),
       ),
-    );
-  }
-}
-
-class _StreamIndicator extends StatelessWidget {
-  const _StreamIndicator();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Chip(
-      avatar: Icon(Icons.circle, size: 12, color: Colors.green),
-      label: Text('Live analysis'),
     );
   }
 }

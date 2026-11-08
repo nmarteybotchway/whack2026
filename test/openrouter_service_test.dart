@@ -36,7 +36,7 @@ void main() {
   });
 
   group('OpenRouterService', () {
-    test('sends the prompt, image and schema to the preset', () async {
+    test('sends the prompt, image and schema to the bare model', () async {
       late http.Request sent;
       final service = OpenRouterService(
         apiKey: 'test-key',
@@ -60,7 +60,9 @@ void main() {
       expect(text, '{"answer":"hi"}');
       expect(sent.headers['Authorization'], 'Bearer test-key');
       final body = jsonDecode(sent.body) as Map<String, dynamic>;
-      expect(body['model'], '@preset/glm-flash');
+      expect(body['model'], 'z-ai/glm-5.3-flash');
+      expect(body['provider']['order'], ['GMICloud']);
+      expect(body['provider']['require_parameters'], isTrue);
       final content = body['messages'][0]['content'] as List;
       expect(content[0], {'type': 'text', 'text': 'Say hi'});
       expect(content[1]['image_url']['url'], 'data:image/jpeg;base64,AQID');
@@ -78,7 +80,9 @@ void main() {
       );
 
       expect(await service.generate(prompt: 'Say hi'), 'hello');
+      expect(body['model'], '@preset/glm-flash');
       expect(body['messages'][0]['content'], 'Say hi');
+      expect(body.containsKey('provider'), isFalse);
       expect(body.containsKey('response_format'), isFalse);
     });
 
