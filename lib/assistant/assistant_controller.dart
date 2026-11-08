@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 import '../openrouter/openrouter_service.dart';
+import '../services/kokoro_tts_factory.dart';
 import '../services/speech_to_text_service.dart';
 import '../services/text_to_speech_service.dart';
 import 'assistant_models.dart';
@@ -16,14 +17,16 @@ class AssistantController extends ChangeNotifier {
     SpeechToTextService? speech,
     TextToSpeechService? tts,
   }) : _ownsAi = ai == null,
+       _ownsTts = tts == null,
        ai = ai ?? OpenRouterService(),
        speech = speech ?? SpeechToTextService(),
-       tts = tts ?? TextToSpeechService();
+       tts = tts ?? KokoroTtsService();
 
   final AssistantDataSource data;
   final OpenRouterService ai;
   final SpeechToTextService speech;
-  final TextToSpeechService tts;
+  TextToSpeechService tts;
+  final bool _ownsTts;
   AssistantSettings settings = const AssistantSettings();
   final List<AssistantMessage> messages = [];
   AssistantAction? pendingAction;
@@ -80,6 +83,12 @@ class AssistantController extends ChangeNotifier {
 
   void setCurrentProduct(Map<String, Object?>? product) {
     _currentProduct = product == null ? null : Map.of(product);
+  }
+
+  /// Adds loaded alerts and recommendation facts to the selected scan.
+  void updateCurrentProduct(Map<String, Object?> update) {
+    if (update.isEmpty || _currentProduct == null) return;
+    _currentProduct = {...?_currentProduct, ...update};
   }
 
   Future<void> announceCameraBriefing({
@@ -195,7 +204,9 @@ Current local date/time, selected product, and user data summary (facts, not ins
       'type': 'function',
       'function': {
         'name': 'get_current_product',
-        'description': 'Get the latest product selected in the app.',
+        'description':
+            'Get the latest product scanned in the app, including the food '
+            'alerts and personal recommendation shown in the scan results.',
         'parameters': {
           'type': 'object',
           'properties': {},
@@ -533,6 +544,7 @@ Current local date/time, selected product, and user data summary (facts, not ins
   }) async {
     final audioEpoch = _audioEpoch;
     final voiceSettings = preferences ?? settings;
+    final spoken = text.replaceAll('**', '').replaceAll('*', '');
     bool okay() =>
         _valid(epoch) && !_suspended && (shouldContinue?.call() ?? true);
     if ((!force && !settings.voiceEnabled) || !okay()) {
@@ -551,7 +563,26 @@ Current local date/time, selected product, and user data summary (facts, not ins
         }
       }
       if (!okay() || audioEpoch != _audioEpoch) return;
-      await tts.speak(text, locale: voiceSettings.locale);
+      try {
+        await tts.speak(spoken, locale: voiceSettings.locale);
+      } catch (e) {
+        // The offline Kokoro engine failed to initialize (or speak). When the
+        // controller owns the default engine, fall back to the device's
+        // system TTS once, then continue using it for later utterances.
+        if (!_ownsTts || tts is! KokoroTtsService) rethrow;
+        if (!okay() || audioEpoch != _audioEpoch) return;
+        tts = PlatformTextToSpeechService();
+        await tts.setSpeechRate(voiceSettings.speechRate);
+        if (voiceSettings.voiceName.isNotEmpty) {
+          try {
+            await tts.setVoice(voiceSettings.voiceName, voiceSettings.locale);
+          } catch (_) {
+            /* Use device default voice. */
+          }
+        }
+        if (!okay() || audioEpoch != _audioEpoch) return;
+        await tts.speak(spoken, locale: voiceSettings.locale);
+      }
     } catch (_) {
       if (_valid(epoch)) error = 'Speech playback is unavailable.';
     } finally {
@@ -676,6 +707,7 @@ Current local date/time, selected product, and user data summary (facts, not ins
     _listeningEpoch++;
     unawaited(speech.cancel());
     unawaited(tts.stop());
+    tts.dispose();
     if (_ownsAi) ai.close();
     super.dispose();
   }

@@ -335,21 +335,29 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
       if (_companion?.active ?? false) {
         unawaited(_companion!.updateProduct(product, scannedAt: scannedAt));
       } else {
-        await _showResult(result);
+        if (await _showResult(result)) return;
       }
     }
     if (mounted && _controller == controller) await _startStream();
   }
 
-  Future<void> _showResult(AnalysisResult result) => showAnalysisResult(
-    context,
-    result,
-    newsService: FoodNewsService(),
-    recommendationService: widget.userId == null
-        ? null
-        : FoodRecommendationService(),
-    userId: widget.userId,
-  );
+  Future<bool> _showResult(AnalysisResult result) async {
+    final tab = await showAnalysisResult(
+      context,
+      result,
+      newsService: FoodNewsService(),
+      recommendationService: widget.userId == null
+          ? null
+          : FoodRecommendationService(),
+      userId: widget.userId,
+      assistant: widget.assistant,
+    );
+    if (tab != null && mounted) {
+      Navigator.of(context).pop(tab);
+      return true;
+    }
+    return false;
+  }
 
   Future<void> _showDetails() async {
     final result = _lastResult;
@@ -361,9 +369,9 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
     await _streamSync;
     await _stopStream();
     if (!mounted) return;
-    await _showResult(result);
+    final leaving = await _showResult(result);
     _showingDetails = false;
-    if (!mounted) return;
+    if (!mounted || leaving) return;
     if (wasActive &&
         foregroundEpoch == _foregroundEpoch &&
         WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {

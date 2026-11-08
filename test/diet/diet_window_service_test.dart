@@ -24,11 +24,19 @@ class _FakeStorage implements DietStorage {
   Future<void> save(List<ReceiptItem> items, DateTime day) async {
     final id =
         '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
+    // Mirrors ReceiptStore's merge write: foods are unioned and each
+    // nutrient is incremented, so earlier saves for the day are kept.
+    final existing = days[id];
+    final nutrition = {...?existing?.nutrition};
+    nutrition['CA'] = (nutrition['CA'] ?? 0) + 2;
     days[id] = DietDay(
       id: id,
       date: DateTime(day.year, day.month, day.day),
-      foods: [for (final item in items) item.name],
-      nutrition: {'CA': 2},
+      foods: {
+        ...?existing?.foods,
+        for (final item in items) item.name,
+      }.toList(),
+      nutrition: nutrition,
     );
   }
 }
@@ -115,6 +123,50 @@ void main() {
     expect(storage.days.containsKey('2026-10-01'), isFalse);
     // Newest day first: 11-07's Eggs, then 11-06's Milk.
     expect(service.recentFoods(), ['Eggs', 'Milk']);
+  });
+
+  test('a second save on the same day keeps the earlier nutrition', () async {
+    final storage = _FakeStorage({});
+    final service = DietWindowService('user', storage: storage, now: () => today);
+
+    await service.save([const ReceiptItem(name: 'Milk', price: 1.0)], today);
+    await service.save([const ReceiptItem(name: 'Eggs', price: 2.0)], today);
+
+    expect(service.recentFoods(), ['Milk', 'Eggs']);
+    expect(service.recentNutritionTotals(), {'CA': 4.0});
+  });
+
+  test('save rejects days before the window instead of pruning them',
+      () async {
+    final storage = _FakeStorage({});
+    final service = DietWindowService('user', storage: storage, now: () => today);
+
+    await expectLater(
+      service.save(
+        [const ReceiptItem(name: 'Eggs', price: 2.0)],
+        DateTime(2026, 10, 23),
+      ),
+      throwsA(isA<DietDayOutOfWindowException>()),
+    );
+    expect(storage.days, isEmpty, reason: 'nothing may be written');
+  });
+
+  test('save accepts the oldest in-window day', () async {
+    final storage = _FakeStorage({});
+    final service = DietWindowService('user', storage: storage, now: () => today);
+
+    await service.save(
+      [const ReceiptItem(name: 'Eggs', price: 2.0)],
+      DateTime(2026, 10, 24, 18),
+    );
+    expect(storage.days.keys, ['2026-10-24']);
+  });
+
+  test('cutoffFor matches the review sheet bound', () {
+    expect(
+      DietWindowService.cutoffFor(DateTime(2026, 11, 7, 23, 59)),
+      DateTime(2026, 10, 24),
+    );
   });
 
   test('deleteDay removes the day from storage and the mirror', () async {

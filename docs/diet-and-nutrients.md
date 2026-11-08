@@ -3,7 +3,7 @@
 Receipts are photographed, turned into food names, stored per day under the
 user, enriched with vitamins and minerals from USDA FoodData Central, and kept
 for a sliding two-week window. The window, together with foods logged through
-the assistant, feeds the nutrient tracker, the home-screen gaps card, and the
+the assistant, feeds the nutrient tracker, the home-screen garden, and the
 scan recommender. A separate nutrient garden on the home page shows three Rive
 trees.
 
@@ -17,11 +17,11 @@ trees.
 | `lib/diet/nutrition_service.dart` | `NutritionService`: USDA lookup, `nutritionCache`, unit normalisation |
 | `lib/diet/diet_window_service.dart` | `DietDay`, `DietStorage`, `FirestoreDietStorage`, `DietWindowService` (14-day window + pruning) |
 | `lib/diet/nutrient_insights.dart` | `nutrientTargets`, `NutrientStatus`, `NutrientCoverage`, `NutrientInsights` |
-| `lib/diet/nutrient_tracker_page.dart` | `NutrientTrackerPage` and the home-screen `NutrientGapsCard` |
+| `lib/diet/nutrient_tracker_page.dart` | `NutrientTrackerPage` (opened from the History tab) |
 | `lib/diet/diet_history_page.dart` | `DietHistoryPage`: receipt days and manual food logs |
 | `lib/food/nutrient.dart` | `Nutrient` enum: shorthand ids, units, reference amounts |
 | `lib/garden/nutrient_garden.dart` | `NutrientGarden`: three Rive trees |
-| `lib/garden/nutrient_score_service.dart` | `NutrientScoreService`: 0..1 score (currently not wired in) |
+| `lib/garden/nutrient_score_service.dart` | `NutrientScoreService`: 0..1 score from `NutrientInsights` |
 
 ## Data flow
 
@@ -47,33 +47,29 @@ flowchart TD
     Window --> Insights[NutrientInsights.load]
     Logged --> Insights
     Insights --> Tracker[NutrientTrackerPage]
-    Insights --> GapsCard[NutrientGapsCard on home]
     Insights --> Recs[FoodRecommendationService<br/>low/high nutrients]
     Window --> History[DietHistoryPage]
     Entries --> History
-    Garden[NutrientGarden progress: 0.62 hard-coded] -.not wired.- Score[NutrientScoreService]
+    Insights --> Score[NutrientScoreService.scoreFromInsights] --> Garden[NutrientGarden on home]
 ```
 
 ## Firestore paths
 
 | Path | Written by | Read by | Fields |
 | --- | --- | --- | --- |
-| `users/{uid}/diet/{yyyy-MM-dd}` | `ReceiptStore.save` (via `DietWindowService.save`); deleted by `ReceiptStore.delete` / `deleteOlderThan` | `ReceiptStore.history()` → `DietWindowService` | `date` (Timestamp, local midnight), `foods` (string array, `arrayUnion`), `nutrition` (map shorthand → double, 2 dp), `updatedAt` (server timestamp) |
+| `users/{uid}/diet/{yyyy-MM-dd}` | `ReceiptStore.save` (via `DietWindowService.save`); deleted by `ReceiptStore.delete` / `deleteOlderThan` | `ReceiptStore.history()` → `DietWindowService` | `date` (Timestamp, local midnight), `foods` (string array, `arrayUnion`), `nutrition` (map shorthand → double, `FieldValue.increment` per receipt, each increment rounded to 2 dp), `updatedAt` (server timestamp) |
 | `users/{uid}/foodEntries/{entryId}` | `AssistantRepository` (`propose_food_log`), see `docs/assistant.md` | `ReceiptStore.loggedIntakeSince`, `DietHistoryPage` "Manual food logs" | `name`, `localDate` (Timestamp), `localDay` (string), `kind` (`eaten`/`purchased`), `source` (`assistant`), `createdAt`, optional `amount` |
 | `nutritionCache/{lower-cased food name}` | `NutritionService.nutrientsFor` (top-level, shared by all users) | `NutritionService.nutrientsFor` | `nutrition` (map), `updatedAt` |
-| `users/{uid}` | `NutrientScoreService.save` (merge) | `NutrientScoreService.load` | `nutrientScore`, `nutrientTotals`, `nutrientUpdatedAt` |
 
 `firestore.rules` has matching rules for `users/{uid}/diet/{dayId}` (keys
 limited to `date`, `foods`, `updatedAt`, `nutrition`; `foods` ≤ 500 entries),
 `users/{uid}/foodEntries/{entryId}` (create only, no update), and
 `nutritionCache/{foodName}` (any signed-in user may read/create/update). The
-`users/{uid}` update rule only allows `religion`, `dietary`,
-`health_conditions` and `updatedAt`, so the `nutrientScore*` fields would be
-rejected (see Issues).
+garden score is computed on demand and never stored.
 
 ## Receipt scanning
 
-`ReceiptScanPage(userId:)` is opened from `DietHistoryPage` ("Scan receipt"),
+`ReceiptScanPage(userId:, diet:)` is opened from `DietHistoryPage` ("Scan receipt"),
 only on Android/iOS (`ReceiptScanPage.isSupported`). It uses the back camera
 at `ResolutionPreset.veryHigh` and releases the camera on
 `AppLifecycleState.inactive`, as the product scanner does.
@@ -87,7 +83,10 @@ On capture (`_capture`):
      then `parseReceiptItems(result.text)`.
 2. No items → snackbar "No items found. Make sure the whole receipt fills the frame…".
 3. `showReceiptReview(context, items)`; null or empty → stop.
-4. `DietWindowService(widget.userId).save(reviewed.items, reviewed.day)`.
+4. `save(reviewed.items, reviewed.day)` on the `diet` passed in by
+   `DietHistoryPage` (or a new `DietWindowService(widget.userId)` if none).
+   A `DietDayOutOfWindowException` is shown as a snackbar and the page stays
+   open; other errors are shown inline.
 5. Pop with the number of items saved; `DietHistoryPage` shows
    "Saved N foods to your diet."
 
@@ -137,8 +136,8 @@ Used only for the ML Kit fallback. Line by line:
 ### Review sheet
 
 `ReceiptReviewSheet` lists item names with a delete button each, and a date
-tile "When did you get this?" (default today; `showDatePicker` from 365 days
-ago to today). "Save N items" returns `ReviewedReceipt(items, day)`; "Retake
+tile "When did you get this?" (default today; `showDatePicker` from
+`DietWindowService.cutoffFor(now)`, the window start, to today). "Save N items" returns `ReviewedReceipt(items, day)`; "Retake
 photo" returns null. Prices and quantities are shown nowhere and are not
 stored.
 
@@ -148,10 +147,12 @@ stored.
 
 - `save(items, day)`:
   1. `names = items.map((i) => i.name)`; `totals = await nutrition.totalsFor(names)`.
-  2. `set` on `diet/{yyyy-MM-dd}` with merge: `date` (local midnight),
-     `foods: arrayUnion(names)`, `nutrition: {}`, `updatedAt: serverTimestamp()`.
-  3. If `totals` is non-empty, re-read the doc, add `totals` to its existing
-     `nutrition`, round to 2 dp, and `update` `nutrition`.
+  2. One `set` on `diet/{yyyy-MM-dd}` with merge, built by `dayWrite`:
+     `date` (local midnight), `foods: arrayUnion(names)`,
+     `nutrition: {key: FieldValue.increment(total rounded to 2 dp)}`, and
+     `updatedAt: serverTimestamp()`. Same-day receipts add up server-side.
+     `nutrition` is left out when `totals` is empty, so an existing map is
+     not replaced by `{}`.
 - `history()`: snapshots ordered by `date` descending, `limit(90)`.
 - `deleteOlderThan(cutoff)`: batch-deletes days with `date < cutoff` (not
   called by any code; the window service prunes via `delete` instead).
@@ -220,8 +221,11 @@ wraps `ReceiptStore` (`loadAll` = first snapshot of `history()`,
 - `recentFoods()`: all food names in the mirror, newest day first,
   duplicates kept.
 - `recentNutritionTotals()`: nutrient totals summed across the mirror.
-- `save(items, day)`: `storage.save`, bump `_version`, then `recentDays()`
-  (prunes).
+- `cutoffFor(now)` (static): the same cutoff for a given time; the review
+  sheet uses it as the date picker's `firstDate`.
+- `save(items, day)`: throws `DietDayOutOfWindowException` (with a
+  user-facing `message`) without writing if `day` is before the cutoff;
+  otherwise `storage.save`, bump `_version`, then `recentDays()` (prunes).
 - `deleteDay(dayId)`: delete from storage and mirror, bump `_version`.
 
 Callers: `ReceiptScanPage` (save), `DietHistoryPage` (stream, delete),
@@ -294,8 +298,6 @@ footnote.
   4 gaps with "Try: <sources>", plus a sodium warning when `high`), and a
   row per nutrient with average, percentage of target, status label, daily
   bars, and good sources. Pull-to-refresh reloads.
-- `NutrientGapsCard` (home page): 14-day insights, up to 5 gap chips
-  "<label> <pct>%"; reloads after returning from the tracker.
 - `FoodRecommendationService.parseProfile` maps `lacking`/`low` to
   `lowNutrients` and `high` to `highNutrients` (see `docs/recommendations.md`).
 
@@ -304,7 +306,10 @@ footnote.
 `DietHistoryPage(userId:)`:
 
 - "Scan receipt" opens `ReceiptScanPage`; "Nutrient tracker" opens the tracker.
-- A `StreamBuilder` over `DietWindowService(userId).recentDaysStream()` shows
+- It is a `StatefulWidget` that creates one `DietWindowService` and its
+  `recentDaysStream()` in its state, and passes that service to
+  `ReceiptScanPage`, so a saved receipt refreshes the list straight away.
+- A `StreamBuilder` over that stream shows
   one `_DayCard` per day: food chips and a `_NutrientBox` per stored
   nutrient, and "Delete day" (with confirmation) → `deleteDay`.
 - "Manual food logs": a live query on `users/{uid}/foodEntries` ordered by
@@ -317,105 +322,67 @@ footnote.
 
 ### `NutrientGarden`
 
-`NutrientGarden(progress:)` loads `assets/rive/tree_demo.riv` (declared in
-`pubspec.yaml`, package `rive: ^0.14.11`) and draws three trees in a 180 px
-row with scales 0.55 (left), 1.0 (centre), 0.75 (right). Each tree builds a
-`RiveWidgetController` with `StateMachineNamed('State Machine 1')` and sets
-the state machine's first `NumberInput` to
-`progress.clamp(0, 1) * 80 * scale`, so a perfect score reaches 80 % of the
-input's 0–100 range on the centre tree.
+`NutrientGarden(userId:)` sits on the home tab (keyed by the user and by a
+scan counter in `_HomePageState`, so it reloads after the scan page closes).
+It loads `NutrientInsights.load(userId)` (injectable `loader`), scores it with
+`NutrientScoreService.scoreFromInsights`, and animates the trees to the new
+score over 800 ms with a `TweenAnimationBuilder`.
 
-The home page currently passes a constant:
+| State | Shown |
+| --- | --- |
+| Loading | Trees at 0 (same 180 px height) |
+| Error | Logged with `debugPrint`; trees stay at 0 |
+| `insights.isEmpty` | Trees at 0 plus "Scan a receipt to grow your garden" |
+| Otherwise | Trees at the score |
 
-```dart
-// TODO: feed from NutrientScoreService once diet history is wired;
-// 0.62 stands in for a decent-but-not-perfect diet.
-const NutrientGarden(progress: 0.62),
-```
+The trees come from `assets/rive/tree_demo.riv` (package `rive`), three in a
+row with scales 0.55 (left), 1.0 (centre), 0.75 (right). Each `_Tree` creates
+its `RiveWidgetController` (`StateMachineNamed('State Machine 1')`) once,
+finds the first `NumberInput` once, sets it to
+`progress.clamp(0, 1) * 80 * scale` on every progress change, and disposes
+both in `dispose`. A perfect score reaches 80 % of the input's 0–100 range on
+the centre tree. Tests replace the Rive trees through `treesBuilder`.
 
 ### `NutrientScoreService`
 
-Not called from anywhere in `lib/`.
+Scores come from the same `nutrientTargets` as the tracker, so the garden and
+the tracker never disagree.
 
-- `scoreFromTotals(totals)`: 0 for empty totals; otherwise the mean over all
-  14 keys in its private `_dailyTargets` of `clamp(value / target, 0, 1)`
-  (missing or non-positive nutrients count as 0), clamped to 0..1.
-- `refreshFromFoods(userId, foods)`: `NutritionService.totalsFor(foods)` →
-  score → `save`.
-- `save` merges `nutrientScore`, `nutrientTotals`, `nutrientUpdatedAt` into
-  `users/{uid}`; `load` reads `nutrientScore`.
-
-Its `_dailyTargets` differ from `nutrientTargets`:
-
-| Key | Garden target | Insights target |
-| --- | --- | --- |
-| CA | 700 | 800 |
-| NA | 1600 (scored as a goal) | 2400 (limit) |
-| FE | 8.7 | 14 |
-| K | 3500 | 2000 |
-| MG | 300 | 375 |
-| ZN | 9.5 | 10 |
-| VITA | 700 | 800 |
-| VITB6 | 1.4 | 1.4 |
-| VITB12 | 1.5 | 2.5 |
-| VITC | 40 | 80 |
-| VITD | 10 | 10 |
-| VITE | 4 | 12 |
-| VITK | 1 | 75 |
-| FOL | 200 | 200 |
-
-The score is also computed on raw totals, not on per-day averages.
+- `scoreFromInsights(insights)`: 0 when `insights.isEmpty`; otherwise the mean
+  over every nutrient in `insights.coverage`, clamped to 0..1.
+  - Goal nutrients score `ratio.clamp(0, 1)`, so a megadose of one nutrient
+    can't hide gaps elsewhere.
+  - Limit nutrients (`target.isLimit`, sodium) score `(2 - ratio).clamp(0, 1)`:
+    1 at or under the limit, falling linearly to 0 at twice the limit.
+- `scoreFor(userId)`: loads insights (injectable `loader`, default
+  `NutrientInsights.load`) and scores them.
 
 ## Testing
 
 | Test | Covers |
 | --- | --- |
-| `test/diet/diet_window_service_test.dart` | cutoff exactly two weeks back at midnight; in-window days newest first; stale days deleted and excluded; `recentFoods` keeps duplicates; `recentNutritionTotals` sums only in-window days; `save` writes through and prunes; `deleteDay` removes from storage and mirror (fake `DietStorage`, injected `now`) |
+| `test/diet/diet_window_service_test.dart` | cutoff exactly two weeks back at midnight; in-window days newest first; stale days deleted and excluded; `recentFoods` keeps duplicates; `recentNutritionTotals` sums only in-window days; `save` writes through and prunes; a second same-day save keeps the earlier nutrition; `save` rejects days before the window and accepts the oldest in-window day; `cutoffFor`; `deleteDay` removes from storage and mirror (fake `DietStorage`, injected `now`) |
 | `test/diet/nutrient_insights_test.dart` | averaging over days since tracking began and gap ranking; records outside the window ignored |
 | `test/diet/nutrition_service_test.dart` | USDA name → shorthand and units; folate DFE preference and fallback; MG → UG; IU vitamin D entries |
+| `test/diet/receipt_store_test.dart` | `ReceiptStore.dayWrite` increments each nutrient so same-day receipts add up; leaves `nutrition` out when there is nothing to add |
 | `test/diet/receipt_parser_test.dart` | price-only lines, single-line name+price, skip lines, skip keywords mid-name, quantity prefix, comma decimals/currency, unpaired names, `toMap`/`fromMap`, tax flag, glued price, qty-at-unit-price |
-| `test/diet/veryfi_service_test.dart` | line-item mapping, total-only items, signed headers and base64 body, `VeryfiException` on non-200 (uses `MockClient`) |
+| `test/garden/nutrient_score_service_test.dart` | empty insights score 0; all targets met score 1; half goals; sodium at, over and far over the limit; megadose clamping; `scoreFor` uses the injected loader |
+| `test/garden/nutrient_garden_test.dart` | trees at 0 while loading; empty-diet hint; error falls back to 0; a non-empty diet grows to the expected score (fake loader and `treesBuilder`) |
+| `test/diet/veryfi_service_test.dart` | line-item mapping, total-only items, multi-line descriptions from a real Veryfi response, signed headers and base64 body, `VeryfiException` on non-200 (uses `MockClient`) |
 
-Not covered: `ReceiptStore` (Firestore), `NutritionService.nutrientsFor`
-caching / USDA HTTP, `NutrientInsights.load`, the UI pages, and
-`NutrientScoreService`.
+Not covered: `ReceiptStore` against Firestore (only `dayWrite` is tested),
+`NutritionService.nutrientsFor` caching / USDA HTTP, `NutrientInsights.load`, and the UI pages.
 
 ```sh
-flutter test test/diet
+flutter test test/diet test/garden
 ```
 
 ## Known issues
 
-1. **Same-day receipts likely lose earlier nutrition.** `ReceiptStore.save`
-   writes `'nutrition': <String, double>{}` with `SetOptions(merge: true)`.
-   Firestore treats an empty map in a merge as a field to set, which replaces
-   the existing `nutrition` map; the following read-modify-write then only
-   has the new receipt's totals. The day's nutrition would reflect only the
-   last receipt saved.
-2. **Back-dated receipts older than the window are deleted immediately.**
-   The review sheet allows dates up to 365 days ago, but
-   `DietWindowService.save` prunes right after saving, so a day before the
-   cutoff is written and then deleted while the user is told "Saved N foods".
-3. **History page may not refresh after a scan.** `ReceiptScanPage` saves
-   through its own `DietWindowService` instance, so the history page's
-   stream (a different instance) only sees the new day when it is rebuilt or
-   after its hourly refresh. `DietHistoryPage` is a `StatelessWidget` that
-   creates a new `DietWindowService` and stream in every `build`.
-4. **`nutrientScore` writes are blocked by the rules.** The `users/{uid}`
-   update rule in `firestore.rules` only allows `religion`, `dietary`,
-   `health_conditions`, `updatedAt`. `NutrientScoreService.save` is unused
-   today, but would fail once wired. The same rule also blocks the scan
-   sheet's `ignored_swap_items` write (see `docs/scanning.md`).
-5. **Garden is not wired and uses different targets** (see table above); the
-   progress is hard-coded to 0.62.
-6. **`_Tree.build` creates a new `RiveWidgetController` on every build and
-   never disposes it.**
-7. **Quantities are ignored for nutrition.** Each receipt line and each
+1. **Quantities are ignored for nutrition.** Each receipt line and each
    logged food counts as one 100 g serving. `foods` uses `arrayUnion`, so a
    food bought twice on the same day is listed once.
-8. **Cache key is the raw lower-cased name.** `nutritionCache/{name}` is used
+2. **Cache key is the raw lower-cased name.** `nutritionCache/{name}` is used
    as a document id; names containing `/` (for example "1/2 gal milk") are
    not valid document ids and may make the lookup throw.
-9. `ReceiptStore.deleteOlderThan` is unused; `test/diet/veryfi_service_test.dart`
-   has two tests with the same name ("keeps items where Veryfi only filled
-   the line total").
+3. `ReceiptStore.deleteOlderThan` is unused.

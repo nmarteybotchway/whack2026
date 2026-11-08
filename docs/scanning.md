@@ -283,6 +283,11 @@ generated `KnownFood` enum in `lib/food/known_foods.g.dart`.
 `FoodRepository.get`. `hasAlerts` is true when `localNews` or `generalInfo` is
 non-empty.
 
+- Loading: small spinner. The `getNews` future is created once in
+  `initState` (again in `didUpdateWidget` only if the service or food name
+  changes), so sheet rebuilds don't refetch.
+- Load failed: neutral `_LoadFailedCard` "Couldn’t load food news." (error
+  logged with `debugPrint`).
 - No alerts: green (`primaryContainer`) card with
   `FoodNewsService.noNewsMessage` = "No negative news discovered".
 - Alerts: red (`errorContainer`) "Food alert" card listing
@@ -291,7 +296,11 @@ non-empty.
 ### Recommendation card
 
 `FoodRecommendationService.recommendFor(uid:, foodName:)` returns a
-`FoodRecommendation`. The card shows one of three variants:
+`FoodRecommendation`. Like the news alert, the future is created once per
+service, user and food in `initState` / `didUpdateWidget`, not in `build`.
+While loading it shows a small spinner; if `recommendFor` throws it shows a
+neutral `_LoadFailedCard` "Couldn’t load a recommendation.". Otherwise the
+card shows one of three variants:
 
 | Condition | Card |
 | --- | --- |
@@ -403,10 +412,6 @@ sequenceDiagram
   `health_conditions` and `updatedAt`, so writing `ignored_swap_items`
   fails with permission-denied once those rules are deployed. The checkbox
   then reverts and shows the "Could not save swap preference" snackbar.
-- `_FoodNewsAlert` and `_RecommendationCard` call `getNews` /
-  `recommendFor` inside `FutureBuilder.future` in `build`, so every rebuild
-  of the sheet re-runs the lookups. Toggling the checkbox and the
-  `setState` in `_loadOverride` both cause a rebuild.
 - With `status: 'unavailable'` (no FoodBase key) the identification is still
   non-null, so the news and recommendation cards run with an empty food name.
 
@@ -417,11 +422,12 @@ sequenceDiagram
 | `test/scan/frame_gate_test.dart` | steady item sent once after a second; blank scene never sent; moving camera never sent; brightness change alone is not motion; new item sent after the previous one; same item re-sent after being taken away; dark lens and dim featureless lens count as in a pocket; nothing sent during cooldown; `startCooldown` restarts the cooldown |
 | `test/food/food_matcher_test.dart` | catalogue names to known foods, run-together/separated names, no match |
 | `test/food_news_service_test.dart` | `FoodNewsService` |
+| `test/scan/analysis_result_sheet_test.dart` | swap-checkbox rebuilds do not refetch news or the recommendation; failed loads show the error cards instead of a spinner |
 | `test/widget_test.dart` | `ScanPage` unsupported-platform message; legacy `AnalysisResultSheet` item + alternative rendering |
 
 There are no tests for `ApiProductIdentification._fromFoodBaseResponse`,
 `ProductIdentification.displayName`, or the identification/news/recommendation
-branches of the sheet.
+branches of the sheet beyond the refetch and load-failure cases above.
 
 ```sh
 flutter test test/scan test/food/food_matcher_test.dart test/food_news_service_test.dart test/widget_test.dart

@@ -5,6 +5,16 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'receipt_parser.dart';
 import 'receipt_store.dart';
 
+/// How much of one food was bought on a day, summed across its receipts.
+class DietItemTotals {
+  const DietItemTotals({required this.quantity, required this.spent});
+
+  final int quantity;
+
+  /// Total paid for this food that day.
+  final double spent;
+}
+
 /// One stored diet day: the foods bought that day plus the aggregated
 /// vitamins and minerals of everything bought.
 class DietDay {
@@ -13,6 +23,7 @@ class DietDay {
     required this.date,
     required this.foods,
     required this.nutrition,
+    this.items = const {},
   });
 
   /// Firestore document id (`yyyy-MM-dd`).
@@ -27,6 +38,13 @@ class DietDay {
   /// Aggregated nutrients for the day, keyed by shorthand (CA, VITC, ...).
   final Map<String, double> nutrition;
 
+  /// Quantity and spend per food name. Empty for days saved before
+  /// quantities were stored.
+  final Map<String, DietItemTotals> items;
+
+  /// Total spent across the day's receipts.
+  double get spent => items.values.fold(0, (total, item) => total + item.spent);
+
   /// Parses one `users/{uid}/diet/{yyyy-MM-dd}` document.
   factory DietDay.fromDoc(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data();
@@ -39,8 +57,37 @@ class DietDay {
         for (final entry in (data['nutrition'] as Map? ?? {}).entries)
           if (entry.value is num) '${entry.key}': (entry.value as num).toDouble(),
       },
+      items: <String, DietItemTotals>{
+        for (final entry in (data['items'] as Map? ?? {}).entries)
+          if (entry.value case {'quantity': num quantity, 'spent': num spent})
+            '${entry.key}': DietItemTotals(
+              quantity: quantity.round(),
+              spent: spent.toDouble(),
+            ),
+      },
     );
   }
+}
+
+/// Thrown by [DietWindowService.save] when the purchase day is older than
+/// the window, so the caller can tell the user instead of the day being
+/// saved and immediately pruned.
+class DietDayOutOfWindowException implements Exception {
+  const DietDayOutOfWindowException(this.day, this.cutoff);
+
+  /// The rejected purchase day.
+  final DateTime day;
+
+  /// The oldest day the window accepts.
+  final DateTime cutoff;
+
+  String get message =>
+      'Only the last ${DietWindowService.window.inDays} days are kept, so '
+      'receipts from before ${cutoff.year}-${cutoff.month.toString().padLeft(2, '0')}-'
+      '${cutoff.day.toString().padLeft(2, '0')} cannot be saved.';
+
+  @override
+  String toString() => message;
 }
 
 /// Interface for the diet persistence the window service reads and prunes.
@@ -120,10 +167,12 @@ class DietWindowService {
   /// Counts back whole calendar days rather than subtracting a duration:
   /// a 14×24h subtraction drifts an hour across DST changes and would
   /// misclassify the boundary day.
-  DateTime cutoff() {
-    final n = _now();
-    return DateTime(n.year, n.month, n.day - window.inDays);
-  }
+  DateTime cutoff() => cutoffFor(_now());
+
+  /// The oldest in-window day relative to [now], at local midnight. Used by
+  /// the receipt review sheet to bound its date picker.
+  static DateTime cutoffFor(DateTime now) =>
+      DateTime(now.year, now.month, now.day - window.inDays);
 
   /// Live stream of the window, newest first. Emits the refreshed window
   /// immediately on listen, then again whenever [save] or [deleteDay]
@@ -192,7 +241,14 @@ class DietWindowService {
   /// Saves foods under [day] (through storage), trims the window so expired
   /// days are removed in the same breath, and wakes [recentDaysStream]
   /// listeners with the refreshed window.
+  ///
+  /// Throws [DietDayOutOfWindowException] without saving when [day] is
+  /// before [cutoff]; such a day would be pruned straight away.
   Future<void> save(List<ReceiptItem> items, DateTime day) async {
+    final cutoffDay = cutoff();
+    if (DateTime(day.year, day.month, day.day).isBefore(cutoffDay)) {
+      throw DietDayOutOfWindowException(day, cutoffDay);
+    }
     await storage.save(items, day);
     _version++;
     await recentDays();

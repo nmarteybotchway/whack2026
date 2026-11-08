@@ -1,16 +1,28 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import 'diet_window_service.dart';
 import 'nutrient_tracker_page.dart';
+import 'receipt_parser.dart';
 import 'receipt_scan_page.dart';
 
 /// Diet history: scan grocery receipts and browse the stored diet, organised
 /// by the day the food was bought.
-class DietHistoryPage extends StatelessWidget {
+class DietHistoryPage extends StatefulWidget {
   const DietHistoryPage({super.key, required this.userId});
 
   final String userId;
+
+  @override
+  State<DietHistoryPage> createState() => _DietHistoryPageState();
+}
+
+class _DietHistoryPageState extends State<DietHistoryPage> {
+  /// Created once so rebuilds keep the same stream, and shared with the scan
+  /// page so a saved receipt wakes this page's stream straight away.
+  late final DietWindowService _diet = DietWindowService(widget.userId);
+  late final Stream<List<DietDay>> _days = _diet.recentDaysStream();
+
+  String get userId => widget.userId;
 
   Future<void> _scan(BuildContext context) async {
     if (!ReceiptScanPage.isSupported) {
@@ -24,7 +36,9 @@ class DietHistoryPage extends StatelessWidget {
       return;
     }
     final saved = await Navigator.of(context).push<int>(
-      MaterialPageRoute(builder: (_) => ReceiptScanPage(userId: userId)),
+      MaterialPageRoute(
+        builder: (_) => ReceiptScanPage(userId: userId, diet: _diet),
+      ),
     );
     if (saved == null || saved == 0 || !context.mounted) return;
     ScaffoldMessenger.of(
@@ -73,7 +87,7 @@ class DietHistoryPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final diet = DietWindowService(userId);
+    final diet = _diet;
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -101,7 +115,7 @@ class DietHistoryPage extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         StreamBuilder<List<DietDay>>(
-          stream: diet.recentDaysStream(),
+          stream: _days,
           builder: (context, snapshot) {
             if (snapshot.hasError) {
               return const Text(
@@ -121,80 +135,18 @@ class DietHistoryPage extends StatelessWidget {
                     padding: EdgeInsets.symmetric(vertical: 8),
                     child: Text('No receipt purchases tracked yet.'),
                   ),
-                for (final day in days)
+                for (final day in days) ...[
                   _DayCard(
                     day: day,
                     onDelete: () => _delete(context, diet, day.id),
                   ),
-              ],
-            );
-          },
-        ),
-        const SizedBox(height: 20),
-        Text('Manual food logs', style: theme.textTheme.titleLarge),
-        const SizedBox(height: 4),
-        const Text(
-          'Foods you logged as eaten or purchased. These stay separate from receipt totals.',
-        ),
-        const SizedBox(height: 8),
-        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: FirebaseFirestore.instance
-              .collection('users')
-              .doc(userId)
-              .collection('foodEntries')
-              .orderBy('localDate', descending: true)
-              .limit(100)
-              .snapshots(),
-          builder: (context, snapshot) {
-            if (snapshot.hasError) {
-              return const Text('Cannot load manual food logs.');
-            }
-            if (!snapshot.hasData) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            final docs = snapshot.data!.docs;
-            if (docs.isEmpty) return const Text('No manual food logs yet.');
-            return Column(
-              children: [
-                for (final doc in docs) _ManualEntryCard(data: doc.data()),
+                  const SizedBox(height: 8),
+                ],
               ],
             );
           },
         ),
       ],
-    );
-  }
-}
-
-class _ManualEntryCard extends StatelessWidget {
-  const _ManualEntryCard({required this.data});
-
-  final Map<String, dynamic> data;
-
-  @override
-  Widget build(BuildContext context) {
-    final localDay = data['localDay'];
-    final date = localDay is String
-        ? DateTime.tryParse(localDay)
-        : (data['localDate'] as Timestamp?)?.toDate().toLocal();
-    final kind = data['kind'] == 'eaten' ? 'Eaten' : 'Purchased';
-    final amount = data['amount'];
-    return Card(
-      child: ListTile(
-        leading: Icon(
-          data['kind'] == 'eaten'
-              ? Icons.restaurant
-              : Icons.shopping_bag_outlined,
-        ),
-        title: Text(data['name'] as String? ?? 'Food'),
-        subtitle: Text(
-          [
-            kind,
-            if (amount is String && amount.isNotEmpty) amount,
-            if (date != null) _formatDay(date),
-          ].join(' · '),
-        ),
-      ),
     );
   }
 }
@@ -214,7 +166,11 @@ class _DayCard extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: ExpansionTile(
         title: Text(_formatDay(date)),
-        subtitle: Text('${foods.length} foods'),
+        subtitle: Text(
+          day.items.isEmpty
+              ? '${foods.length} foods'
+              : '${foods.length} foods · ${formatPrice(day.spent)}',
+        ),
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -223,7 +179,10 @@ class _DayCard extends StatelessWidget {
               child: Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: [for (final food in foods) Chip(label: Text(food))],
+                children: [
+                  for (final food in foods)
+                    Chip(label: Text(_foodLabel(food, day.items[food]))),
+                ],
               ),
             ),
           ),
@@ -266,6 +225,12 @@ class _DayCard extends StatelessWidget {
     );
   }
 }
+
+/// A food's chip label, e.g. `Milk ×2 · £3.30`. Days saved before
+/// quantities were stored have no [totals] and show the name alone.
+String _foodLabel(String food, DietItemTotals? totals) => totals == null
+    ? food
+    : '$food ×${totals.quantity} · ${formatPrice(totals.spent)}';
 
 /// A small box showing one nutrient's shorthand and aggregated amount.
 class _NutrientBox extends StatelessWidget {

@@ -45,6 +45,11 @@ dependencies:
   speech_to_text: ^7.5.0
   rive: ^0.14.11
   shared_preferences: ^2.5.6
+  sherpa_onnx: ^2.0.1
+  piper_phonemize: ^1.5.9
+  audioplayers: ^6.8.1
+  path_provider: ^2.1.6
+  path: ^1.9.0
 
 dev_dependencies:
   flutter_test:
@@ -71,6 +76,9 @@ flutter:
   assets:
     - assets/tesco_stores.json
     - assets/rive/tree_demo.riv
+    - assets/tts/model.onnx
+    - assets/tts/voices.bin
+    - assets/tts/tokens.txt
 
   # To add assets to your application, add an assets section, like this:
   # assets:

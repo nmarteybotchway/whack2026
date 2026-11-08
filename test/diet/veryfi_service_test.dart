@@ -10,10 +10,10 @@ void main() {
   test('maps Veryfi line items onto receipt items', () async {
     const responseBody = '''
     {"line_items": [
-      {"description": "Whole Milk 1L", "price": 2.49, "qty": 1, "total": 2.49},
-      {"description": "Yoghurt", "price": 1.2, "qty": 3, "total": 3.6},
-      {"description": "No price item", "price": 0, "total": 0, "qty": 1},
-      {"description": "", "price": 5.0, "qty": 1}
+      {"description": "Whole Milk 1L", "price": 2.49, "quantity": 1, "total": 2.49},
+      {"description": "Yoghurt", "price": 1.2, "quantity": 3, "total": 3.6},
+      {"description": "No price item", "price": 0, "total": 0, "quantity": 1},
+      {"description": "", "price": 5.0, "quantity": 1}
     ]}
     ''';
     final service = VeryfiService(
@@ -35,10 +35,10 @@ void main() {
   });
 
   test('keeps items where Veryfi only filled the line total', () async {
-    // Real Veryfi responses leave price and qty null with only total set;
+    // Real Veryfi responses leave price and quantity null with only total set;
     // such items are kept as a single purchase of the line total.
     const responseBody = '''
-    {"line_items": [{"description": "Bread", "price": null, "qty": null, "total": 3.0}]}
+    {"line_items": [{"description": "Bread", "price": null, "quantity": null, "total": 3.0}]}
     ''';
     final service = VeryfiService(
       client: MockClient((request) async => http.Response(responseBody, 201)),
@@ -50,12 +50,12 @@ void main() {
     expect(items.single.quantity, 1);
   });
 
-  test('keeps items where Veryfi only filled the line total', () async {
-    // Real Veryfi response shape: price and qty null, total present.
+  test('parses multi-line descriptions from a real Veryfi response', () async {
+    // Real Veryfi response shape: price and quantity null, total present.
     const responseBody = '''
     {"line_items": [
-      {"description": "MIRAS OLIJFOLIE\\n(GLAS) 1L", "price": null, "qty": null, "total": 3.99},
-      {"description": "ULKER PETIBOR BISKUVI 1KG", "price": null, "qty": null, "total": 2.49}
+      {"description": "MIRAS OLIJFOLIE\\n(GLAS) 1L", "price": null, "quantity": null, "total": 3.99},
+      {"description": "ULKER PETIBOR BISKUVI 1KG", "price": null, "quantity": null, "total": 2.49}
     ], "total": 14.21}
     ''';
     final service = VeryfiService(

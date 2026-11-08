@@ -71,7 +71,7 @@ class VeryfiService {
 
   /// Maps Veryfi's `line_items` array onto [ReceiptItem]s.
   ///
-  /// In practice Veryfi often leaves `price` and `qty` null and only fills
+  /// In practice Veryfi often leaves `price` and `quantity` null and only fills
   /// `total`, so the line total is used as a single-quantity price then.
   List<ReceiptItem> _itemsFromResponse(Map<dynamic, dynamic> body) {
     final lineItems = body['line_items'];
@@ -85,7 +85,7 @@ class VeryfiService {
       if (name.isEmpty) continue;
       final price = _toDouble(raw['price']);
       final total = _toDouble(raw['total']);
-      final quantity = _toDouble(raw['qty']).round();
+      final quantity = _toDouble(raw['quantity']).round();
       if (price > 0) {
         items.add(ReceiptItem(
           name: name,
