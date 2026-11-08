@@ -68,6 +68,9 @@ class AssistantController extends ChangeNotifier {
   Future<Map<String, Object?>> Function()? _cameraPhotoRequester;
   static const int _maxToolCalls = 6;
 
+  /// The model can be slow under load; wait this long for each reply.
+  static const _modelTimeout = Duration(minutes: 5);
+
   String? get currentlySpokenText => _currentlySpokenText;
 
   void _notify() {
@@ -310,7 +313,11 @@ Call request_camera_photo only when the specific product is unidentified, or the
       ..._history,
     ];
     while (_valid(epoch) && calls < _maxToolCalls) {
-      final response = await ai.chat(messages: request, tools: _toolDefs);
+      final response = await ai.chat(
+        messages: request,
+        tools: _toolDefs,
+        timeout: _modelTimeout,
+      );
       if (!_valid(epoch)) return;
       final content = response['content'];
       final toolCalls = response['tool_calls'];
