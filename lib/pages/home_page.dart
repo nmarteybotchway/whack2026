@@ -8,6 +8,8 @@ import '../diet/diet_history_page.dart';
 import '../garden/nutrient_garden.dart';
 import '../health_data/health_tracking_controller.dart';
 import '../health_data/health_tracking_card.dart';
+import '../pantry_news/pantry_news_card.dart';
+import '../pantry_news/pantry_news_controller.dart';
 import '../scan/scan_page.dart';
 import 'settings_page.dart';
 
@@ -49,6 +51,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   int _scans = 0;
   late final HealthTrackingController _tracking;
   late final AssistantController _assistant;
+  late final PantryNewsController _pantryNews = PantryNewsController();
 
   @override
   void initState() {
@@ -79,6 +82,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       if (mounted && !_tracking.introSeen) {
         await showHealthTrackingIntro(context, _tracking);
       }
+      _pantryNews.start();
     });
   }
 
@@ -87,6 +91,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _assistant.dispose();
     _tracking.dispose();
+    _pantryNews.dispose();
     super.dispose();
   }
 
@@ -142,10 +147,29 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       appBar: _index == 0 ? null : AppBar(title: Text(_tabs[_index].label)),
       body: switch (_index) {
         // Keyed by scan count so the nutrient cards reload after a scan.
-        0 => _HomeTab(key: ValueKey(_scans), user: widget.user),
+        // The pantry-news banner lives above the keyed tab so it survives
+        // the tab being recreated after a scan.
+        0 => Stack(
+          fit: StackFit.expand,
+          children: [
+            _HomeTab(key: ValueKey(_scans), user: widget.user),
+            SafeArea(
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: ListenableBuilder(
+                  listenable: _pantryNews,
+                  builder: (context, _) => _pantryNews.announcedNews == null
+                      ? const SizedBox.shrink()
+                      : PantryNewsCard(controller: _pantryNews),
+                ),
+              ),
+            ),
+          ],
+        ),
         1 => DietHistoryPage(
           key: ValueKey(widget.user.uid),
           userId: widget.user.uid,
+          pantryNews: _pantryNews,
         ),
         2 => AssistantPage(controller: _assistant),
         3 => SettingsPage(
