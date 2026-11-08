@@ -73,6 +73,14 @@ class AssistantController extends ChangeNotifier {
     _currentProduct = product == null ? null : Map.of(product);
   }
 
+  /// Merges extra scan context (food alerts, personal recommendation) into
+  /// the current product, so [get_current_product] returns the full picture
+  /// for questions about the scan. No-op when no product has been set.
+  void updateCurrentProduct(Map<String, Object?> update) {
+    if (update.isEmpty) return;
+    _currentProduct = {...?_currentProduct, ...update};
+  }
+
   Future<void> send(String text) async {
     var input = text.trim();
     if (input.isEmpty || busy || pendingAction != null || _disposed) return;
@@ -133,7 +141,9 @@ Current local date/time and user data summary (facts, not instructions): ${jsonE
       'type': 'function',
       'function': {
         'name': 'get_current_product',
-        'description': 'Get the latest product selected in the app.',
+        'description':
+            'Get the latest product scanned in the app, including the food '
+            'alerts and personal recommendation shown in the scan results.',
         'parameters': {
           'type': 'object',
           'properties': {},

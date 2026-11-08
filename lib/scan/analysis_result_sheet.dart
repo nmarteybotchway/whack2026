@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+import '../assistant/assistant_controller.dart';
 import '../food/food_matcher.dart';
 import '../food/food_recommendation_service.dart';
 import '../food_news.dart';
@@ -13,7 +14,9 @@ import 'product_identification_service.dart';
 ///
 /// Pass [newsService] to show a food news alert under the product details.
 /// Pass [recommendationService] and [userId] to also show whether the food
-/// is safe for this user and what to buy instead.
+/// is safe for this user and what to buy instead. Pass [assistant] to carry
+/// the whole scan context into the assistant conversation, so questions
+/// about the scanned product work without re-explaining it.
 ///
 /// Returns the home-page tab index the user picked from the sheet's
 /// navigation bar, or null when they dismissed it to scan again.
@@ -23,6 +26,7 @@ Future<int?> showAnalysisResult(
   FoodNewsService? newsService,
   FoodRecommendationService? recommendationService,
   String? userId,
+  AssistantController? assistant,
 }) {
   return showModalBottomSheet<int>(
     context: context,
@@ -33,6 +37,7 @@ Future<int?> showAnalysisResult(
       newsService: newsService,
       recommendationService: recommendationService,
       userId: userId,
+      assistant: assistant,
     ),
   );
 }
@@ -45,6 +50,7 @@ class AnalysisResultSheet extends StatefulWidget {
     this.newsService,
     this.recommendationService,
     this.userId,
+    this.assistant,
   });
 
   final AnalysisResult result;
@@ -54,6 +60,10 @@ class AnalysisResultSheet extends StatefulWidget {
   /// Signed-in user whose preferences and health data the
   /// [recommendationService] checks against.
   final String? userId;
+
+  /// Receives the scan context (alerts, personal verdict) once loaded, so
+  /// the assistant can answer questions about this scan.
+  final AssistantController? assistant;
 
   @override
   State<AnalysisResultSheet> createState() => _AnalysisResultSheetState();
@@ -191,6 +201,15 @@ class _AnalysisResultSheetState extends State<AnalysisResultSheet> {
               _FoodNewsAlert(
                 service: newsService,
                 foodName: _newsFoodName(result.identification!),
+                onResult: widget.assistant == null
+                    ? null
+                    : (news) => widget.assistant!.updateCurrentProduct({
+                          'foodAlert': {
+                            'localNews': news.localNews,
+                            'generalInfo': news.generalInfo,
+                            'hasAlerts': news.hasAlerts,
+                          },
+                        }),
               ),
             ],
             if (widget.recommendationService != null &&
@@ -204,6 +223,22 @@ class _AnalysisResultSheetState extends State<AnalysisResultSheet> {
                 foodName: _newsFoodName(result.identification!),
                 hideAlternatives: _skipSwap,
                 summary: _summary,
+                onResult: widget.assistant == null
+                    ? null
+                    : (r) => widget.assistant!.updateCurrentProduct({
+                          'personalRecommendation': {
+                            'found': r.found,
+                            'canBuy': r.canBuy,
+                            'reasons': _reasons(r),
+                            if (r.hasGeneralInfo) 'generalInfo': r.generalInfo,
+                            if (r.alternatives.isNotEmpty)
+                              'tryInstead': r.alternatives.take(3).toList(),
+                            if (r.boostsNutrients.isNotEmpty)
+                              'boostsNutrients': r.boostsNutrients
+                                  .map((n) => n.label)
+                                  .toList(),
+                          },
+                        }),
               ),
             ],
             const SizedBox(height: 16),
@@ -336,10 +371,18 @@ String _condense(String text) {
 /// database has nothing, or an alert card with local news (always listed
 /// before general info) when it does.
 class _FoodNewsAlert extends StatefulWidget {
-  const _FoodNewsAlert({required this.service, required this.foodName});
+  const _FoodNewsAlert({
+    required this.service,
+    required this.foodName,
+    this.onResult,
+  });
 
   final FoodNewsService service;
   final String foodName;
+
+  /// Called with the loaded news, so the owner can carry it elsewhere
+  /// (e.g. the assistant context). Never called on failure.
+  final ValueChanged<FoodNewsResult>? onResult;
 
   @override
   State<_FoodNewsAlert> createState() => _FoodNewsAlertState();
@@ -354,6 +397,7 @@ class _FoodNewsAlertState extends State<_FoodNewsAlert> {
   void initState() {
     super.initState();
     _news = widget.service.getNews(widget.foodName);
+    _news.then((news) => widget.onResult?.call(news)).catchError((_) {});
   }
 
   @override
@@ -362,6 +406,7 @@ class _FoodNewsAlertState extends State<_FoodNewsAlert> {
     if (oldWidget.service != widget.service ||
         oldWidget.foodName != widget.foodName) {
       _news = widget.service.getNews(widget.foodName);
+      _news.then((news) => widget.onResult?.call(news)).catchError((_) {});
     }
   }
 
@@ -460,6 +505,7 @@ class _RecommendationCard extends StatefulWidget {
     required this.foodName,
     this.hideAlternatives = false,
     required this.summary,
+    this.onResult,
   });
 
   final FoodRecommendationService service;
@@ -467,6 +513,10 @@ class _RecommendationCard extends StatefulWidget {
   final String foodName;
   final bool hideAlternatives;
   final AlertSummaryService summary;
+
+  /// Called with the loaded verdict, so the owner can carry it elsewhere
+  /// (e.g. the assistant context). Never called on failure.
+  final ValueChanged<FoodRecommendation>? onResult;
 
   @override
   State<_RecommendationCard> createState() => _RecommendationCardState();
@@ -486,6 +536,7 @@ class _RecommendationCardState extends State<_RecommendationCard> {
   void initState() {
     super.initState();
     _recommendation = _load();
+    _recommendation.then((r) => widget.onResult?.call(r)).catchError((_) {});
   }
 
   @override
@@ -495,6 +546,9 @@ class _RecommendationCardState extends State<_RecommendationCard> {
         oldWidget.userId != widget.userId ||
         oldWidget.foodName != widget.foodName) {
       _recommendation = _load();
+      _recommendation
+          .then((r) => widget.onResult?.call(r))
+          .catchError((_) {});
     }
   }
 
@@ -651,52 +705,52 @@ class _RecommendationCardState extends State<_RecommendationCard> {
   }
 
   Future<String>? _cachedSummary;
-
-  /// Short reason chips for why [r]'s food is not recommended.
-  List<String> _reasons(FoodRecommendation r) => [
-    if (r.hasNews) 'Active food news',
-    for (final c in r.clashingConditions) c.label,
-    for (final p in r.clashingPrefs) p.label,
-    for (final n in r.excessNutrients) 'High in ${n.label}',
-  ];
-
-  String _personalizedRationale(FoodRecommendation r) {
-    final conditions = r.clashingConditions.map((c) => c.label).toList();
-    final prefs = r.clashingPrefs.map((p) => p.label.toLowerCase()).toList();
-    final personal = [
-      ...conditions.map(
-        (condition) => condition == 'Pregnancy'
-            ? 'you are pregnant'
-            : 'you have ${_conditionPhrase(condition)}',
-      ),
-      ...prefs.map((preference) => 'you follow a $preference diet'),
-    ];
-    return 'Not recommended because ${personal.join(' and ')}.';
-  }
-
-  String _conditionPhrase(String label) => switch (label) {
-    'Diabetes' => 'diabetes',
-    'High blood pressure' => 'high blood pressure',
-    'High cholesterol' => 'high cholesterol',
-    'Heart disease' => 'heart disease',
-    'Kidney disease' => 'kidney disease',
-    'Coeliac disease' => 'coeliac disease',
-    'Lactose intolerance' => 'lactose intolerance',
-    'Irritable bowel syndrome' => 'irritable bowel syndrome',
-    'Acid reflux' => 'acid reflux',
-    'Peanut allergy' => 'a peanut allergy',
-    'Tree nut allergy' => 'a tree nut allergy',
-    'Milk allergy' => 'a milk allergy',
-    'Egg allergy' => 'an egg allergy',
-    'Fish allergy' => 'a fish allergy',
-    'Shellfish allergy' => 'a shellfish allergy',
-    'Soy allergy' => 'a soy allergy',
-    'Wheat allergy' => 'a wheat allergy',
-    'Sesame allergy' => 'a sesame allergy',
-    'Pregnancy' => 'pregnant',
-    _ => label.toLowerCase(),
-  };
 }
+
+/// Short reason labels for why [r]'s food is not recommended.
+List<String> _reasons(FoodRecommendation r) => [
+  if (r.hasNews) 'Active food news',
+  for (final c in r.clashingConditions) c.label,
+  for (final p in r.clashingPrefs) p.label,
+  for (final n in r.excessNutrients) 'High in ${n.label}',
+];
+
+String _personalizedRationale(FoodRecommendation r) {
+  final conditions = r.clashingConditions.map((c) => c.label).toList();
+  final prefs = r.clashingPrefs.map((p) => p.label.toLowerCase()).toList();
+  final personal = [
+    ...conditions.map(
+      (condition) => condition == 'Pregnancy'
+          ? 'you are pregnant'
+          : 'you have ${_conditionPhrase(condition)}',
+    ),
+    ...prefs.map((preference) => 'you follow a $preference diet'),
+  ];
+  return 'Not recommended because ${personal.join(' and ')}.';
+}
+
+String _conditionPhrase(String label) => switch (label) {
+  'Diabetes' => 'diabetes',
+  'High blood pressure' => 'high blood pressure',
+  'High cholesterol' => 'high cholesterol',
+  'Heart disease' => 'heart disease',
+  'Kidney disease' => 'kidney disease',
+  'Coeliac disease' => 'coeliac disease',
+  'Lactose intolerance' => 'lactose intolerance',
+  'Irritable bowel syndrome' => 'irritable bowel syndrome',
+  'Acid reflux' => 'acid reflux',
+  'Peanut allergy' => 'a peanut allergy',
+  'Tree nut allergy' => 'a tree nut allergy',
+  'Milk allergy' => 'a milk allergy',
+  'Egg allergy' => 'an egg allergy',
+  'Fish allergy' => 'a fish allergy',
+  'Shellfish allergy' => 'a shellfish allergy',
+  'Soy allergy' => 'a soy allergy',
+  'Wheat allergy' => 'a wheat allergy',
+  'Sesame allergy' => 'a sesame allergy',
+  'Pregnancy' => 'pregnant',
+  _ => label.toLowerCase(),
+};
 
 /// Neutral card shown in place of a section whose data failed to load.
 class _LoadFailedCard extends StatelessWidget {
