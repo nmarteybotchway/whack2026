@@ -60,17 +60,24 @@ class OpenRouterService {
 
   final String apiKey;
   final String model;
+
+  /// Model used instead of [model] when a response schema is given. The
+  /// `glm-flash` preset drops `response_format`, so schema calls name the
+  /// model directly and pin the preset's first provider themselves.
+  final String structuredModel;
   final http.Client _client;
 
   /// Creates a service bound to [apiKey].
   ///
   /// [apiKey] defaults to `openRouterApiKey` from the git-ignored
   /// `lib/secrets.dart` (copy `lib/secrets.example.dart` to create it).
-  /// [model] defaults to the `@preset/glm-flash` OpenRouter preset. [client]
-  /// can be replaced in tests.
+  /// [model] defaults to the `@preset/glm-flash` OpenRouter preset, and
+  /// [structuredModel] to the GLM model behind it. [client] can be replaced
+  /// in tests.
   OpenRouterService({
     this.apiKey = openRouterApiKey,
     this.model = '@preset/glm-flash',
+    this.structuredModel = 'z-ai/glm-5.3-flash',
     http.Client? client,
   }) : _client = client ?? http.Client();
 
@@ -108,7 +115,7 @@ class OpenRouterService {
             'Content-Type': 'application/json',
           },
           body: jsonEncode({
-            'model': model,
+            'model': responseSchema == null ? model : structuredModel,
             'messages': [
               {'role': 'user', 'content': content},
             ],
@@ -117,7 +124,10 @@ class OpenRouterService {
                 {'id': 'web'},
               ],
             if (responseSchema != null)
-              'provider': {'require_parameters': true},
+              'provider': {
+                'order': ['GMICloud'],
+                'require_parameters': true,
+              },
             if (responseSchema != null)
               'response_format': {
                 'type': 'json_schema',
