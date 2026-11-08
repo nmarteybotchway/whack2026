@@ -95,7 +95,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // A microphone permission dialog can make the app briefly inactive.
     // Stop capture when it actually leaves the foreground, without cancelling
     // the user's first microphone request while permission is being granted.
-    if (state == AppLifecycleState.paused ||
+    final interrupted =
+        state == AppLifecycleState.inactive &&
+        !_assistant.requestingMicrophonePermission;
+    if (interrupted ||
+        state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden ||
         state == AppLifecycleState.detached) {
       _assistant.suspend();
@@ -112,19 +116,30 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Future<void> _scan() async {
     await _assistant.suspend();
     if (!mounted) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
+    final tab = await Navigator.of(context).push<int>(
+      MaterialPageRoute<int>(
         builder: (_) =>
             ScanPage(userId: widget.user.uid, assistant: _assistant),
       ),
     );
-    if (mounted) setState(() => _scans++);
+    if (!mounted) return;
+    // Returning a tab index means the user tapped a tab on the scan-result
+    // sheet's navigation bar; land them on it. Otherwise treat it as a scan.
+    if (tab != null) {
+      setState(() => _index = tab);
+      return;
+    }
+    setState(() => _scans++);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(_tabs[_index].label)),
+      // The home tab's garden runs edge to edge, behind the status bar and
+      // the bottom bar, so it has no app bar of its own.
+      extendBody: true,
+      extendBodyBehindAppBar: _index == 0,
+      appBar: _index == 0 ? null : AppBar(title: Text(_tabs[_index].label)),
       body: switch (_index) {
         // Keyed by scan count so the nutrient cards reload after a scan.
         0 => _HomeTab(key: ValueKey(_scans), user: widget.user),
@@ -248,33 +263,66 @@ class _ScanButton extends StatelessWidget {
   }
 }
 
-class _HomeTab extends StatelessWidget {
+class _HomeTab extends StatefulWidget {
   const _HomeTab({super.key, required this.user});
 
   final User user;
 
   @override
+  State<_HomeTab> createState() => _HomeTabState();
+}
+
+class _HomeTabState extends State<_HomeTab> {
+  /// Matches the valley's sky: the sun starts up (the scene opens at
+  /// sunrise) and [NutrientGarden.onDayNightChanged] flips this at
+  /// sunset and sunrise.
+  bool _isDay = true;
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final name = user.displayName ?? user.email?.split('@').first ?? 'there';
-    return ListView(
-      padding: const EdgeInsets.all(16),
+    // Black against the bright daytime sky, white against the night one.
+    final color = _isDay ? Colors.black : Colors.white;
+    const shadow = [Shadow(blurRadius: 8, color: Colors.white54)];
+    return Stack(
+      // Expand to the full tab; otherwise the title Column (the only
+      // non-positioned child) sizes the Stack to the width of its text.
+      fit: StackFit.expand,
       children: [
-        Text(
-          'Hi, $name',
-          style: theme.textTheme.headlineMedium?.copyWith(
-            fontWeight: FontWeight.w600,
+        NutrientGarden(
+          key: ValueKey(widget.user.uid),
+          userId: widget.user.uid,
+          onDayNightChanged: (isDay) {
+            if (mounted && _isDay != isDay) setState(() => _isDay = isDay);
+          },
+        ),
+        // Title in the upper part of the middle, clear of the status bar.
+        SafeArea(
+          child: Align(
+            alignment: const Alignment(0, -0.45),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Clean Bite',
+                  style: theme.textTheme.headlineLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: color,
+                    shadows: shadow,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Your health, in one place.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: color.withValues(alpha: .8),
+                    shadows: shadow,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
-        const SizedBox(height: 4),
-        Text(
-          'Your health, in one place.',
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-        const SizedBox(height: 16),
-        NutrientGarden(key: ValueKey(user.uid), userId: user.uid),
       ],
     );
   }

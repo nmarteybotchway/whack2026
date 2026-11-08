@@ -28,11 +28,10 @@ flutter pub get
 | `google_mlkit_text_recognition` | On-device receipt OCR fallback |
 | `http`, `crypto` | REST clients (OpenRouter, USDA, FoodBase, Veryfi HMAC signing, Tesco) |
 | `speech_to_text`, `flutter_tts` | Assistant voice input/output (`lib/services/`) |
-| `rive` | `NutrientGarden` animation (`assets/rive/tree_demo.riv`) |
 | `shared_preferences` | Appearance (theme mode + accent) |
 | `androidx.health.connect:connect-client:1.1.0` (Gradle) | Health Connect reads in `MainActivity.kt` |
 
-Bundled assets (`pubspec.yaml`): `assets/tesco_stores.json`, `assets/rive/tree_demo.riv`.
+Bundled assets (`pubspec.yaml`): `assets/tesco_stores.json`.
 
 ## API keys: `lib/secrets.dart`
 

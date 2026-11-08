@@ -30,8 +30,8 @@ class Food {
     this.healthConditions = const {},
     this.personalPrefs = const {},
     this.localNews = '',
-    this.generalInfo = '',
     this.sources = const [],
+    this.generalInfo = '',
     this.nutrients = const {},
   });
 
@@ -55,12 +55,13 @@ class Food {
   /// regions; empty when there is none.
   final String localNews;
 
+  /// Reference URLs about this food (nutrition articles, NHS pages, FSA
+  /// alerts) stored as the document's `sources` array; empty when none.
+  final List<String> sources;
+
   /// Why even a healthy person should avoid or limit this food (e.g. bacon
   /// is a processed meat high in salt); empty when the food is fine.
   final String generalInfo;
-
-  /// Links backing [localNews] and [generalInfo]; empty when there is none.
-  final List<String> sources;
 
   /// Vitamins and minerals per 100 g, in each [Nutrient.unit]; nutrients
   /// that are absent are unknown or negligible.
@@ -151,8 +152,11 @@ class Food {
         if (Preference.fromId(id) case final p? when p != Preference.none) p,
     },
     localNews: data['local_news'] as String? ?? '',
+    sources: [
+      for (final s in List.from(data['sources'] ?? const []))
+        if (s is String && s.trim().isNotEmpty) s.trim(),
+    ],
     generalInfo: data['general_info'] as String? ?? '',
-    sources: List<String>.from(data['sources'] ?? const []),
     nutrients: Nutrient.parseAmounts(data['nutrients']),
   );
 
@@ -167,8 +171,8 @@ class Food {
     'health_conditions': [for (final c in healthConditions) c.id],
     'personal_prefs': [for (final p in personalPrefs) p.id],
     'local_news': localNews,
-    'general_info': generalInfo,
     'sources': sources,
+    'general_info': generalInfo,
     'nutrients': {
       for (final MapEntry(:key, :value) in nutrients.entries) key.id: value,
     },

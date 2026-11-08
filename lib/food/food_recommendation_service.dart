@@ -21,6 +21,7 @@ class FoodRecommendation {
     this.excessNutrients = const {},
     this.boostsNutrients = const {},
     this.alternatives = const [],
+    this.alternativeBoosts = const {},
     this.swapDeclined = false,
     this.profile = const UserProfile(),
   });
@@ -58,6 +59,17 @@ class FoodRecommendation {
   /// Vote-ranked substitutes ([Food.alternativesFor]); empty when the food
   /// is fine, no alternative is stored for them, or [swapDeclined].
   final List<String> alternatives;
+
+  /// Low nutrients of the user's recent diet that the recommended
+  /// [alternatives] are rich in, per alternative — only where a substitute
+  /// actually covers something. Empty when there are no alternatives or
+  /// none covers a low nutrient.
+  final Map<String, Set<Nutrient>> alternativeBoosts;
+
+  /// Low nutrients of the user's recent diet that any of the recommended
+  /// [alternatives] together provide ([Food.richIn]).
+  Set<Nutrient> get alternativeBoostTotal =>
+      {for (final s in alternativeBoosts.values) ...s};
 
   /// The user turned off swap suggestions for this food
   /// ([UserProfile.declinedSwaps]); the reasons to avoid it are still
@@ -247,6 +259,20 @@ class FoodRecommendationService {
       null => 0,
     };
 
+    final alts = swapDeclined
+        ? const <String>[]
+        : food.alternativesFor(
+            conditions: conditions,
+            prefs: prefs,
+            tieBreak: (a, b) => boosts(b) - boosts(a),
+          );
+    final alternativeBoosts = {
+      for (final alt in alts)
+        if (alternativeFoods[Food.idFor(alt)]
+            case final f? when f.richIn.intersection(lowNutrients).isNotEmpty)
+          alt: f.richIn.intersection(lowNutrients),
+    };
+
     // Full sets, not just the clashing subsets: alternativesFor falls back
     // to `none` rows for anything unmatched, so a user with one clashing
     // and one non-clashing preference still gets the best substitutes.
@@ -260,13 +286,8 @@ class FoodRecommendationService {
       clashingPrefs: clashingPrefs,
       excessNutrients: excessNutrients,
       boostsNutrients: boostsNutrients,
-      alternatives: swapDeclined
-          ? const []
-          : food.alternativesFor(
-              conditions: conditions,
-              prefs: prefs,
-              tieBreak: (a, b) => boosts(b) - boosts(a),
-            ),
+      alternatives: alts,
+      alternativeBoosts: alternativeBoosts,
       swapDeclined: swapDeclined,
       profile: profile,
     );

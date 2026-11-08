@@ -5,6 +5,7 @@ import '../food/food_repository.dart';
 class FoodNewsResult {
   const FoodNewsResult({
     required this.localNews,
+    required this.sources,
     required this.generalInfo,
     required this.hasAlerts,
   });
@@ -12,6 +13,10 @@ class FoodNewsResult {
   /// Current food-safety news (outbreak/recall), or the fixed fallback
   /// message when there is none.
   final String localNews;
+
+  /// Where [localNews] came from (outlet names or URLs); empty when the
+  /// news is empty or no source was stored.
+  final List<String> sources;
 
   /// Why to avoid or limit the food, or the fixed fallback message when
   /// the food is fine.
@@ -48,6 +53,7 @@ class FoodNewsService {
     final general = food?.generalInfo ?? '';
     return FoodNewsResult(
       localNews: _orNoNews(local),
+      sources: local.trim().isEmpty ? const [] : (food?.sources ?? const []),
       generalInfo: _orNoNews(general),
       hasAlerts: local.trim().isNotEmpty || general.trim().isNotEmpty,
     );
