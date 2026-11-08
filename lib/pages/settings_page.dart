@@ -11,6 +11,7 @@ import '../food/health_condition.dart';
 import '../food/preference.dart';
 import '../health_data/body_measurements_card.dart';
 import '../health_data/health_data_card.dart';
+import '../health_data/health_tracking_card.dart';
 import '../health_data/health_tracking_controller.dart';
 
 /// Religion options: every [Preference.religions] label, then beliefs with
@@ -273,6 +274,8 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
         const SizedBox(height: 8),
         HealthDataCard(user: widget.user),
+        const SizedBox(height: 8),
+        HealthTrackingCard(tracking: widget.tracking),
         if (_saving) ...[
           const SizedBox(height: 16),
           const LinearProgressIndicator(),
