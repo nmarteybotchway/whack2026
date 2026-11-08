@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import 'diet_summary_card.dart';
@@ -120,6 +121,12 @@ class _DietHistoryPageState extends State<DietHistoryPage> {
           ),
           icon: const Icon(Icons.insights),
           label: const Text('Nutrient tracker'),
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: () => showLeaderboardModal(context, userId),
+          icon: const Icon(Icons.emoji_events_outlined),
+          label: const Text('Leaderboard'),
         ),
         const SizedBox(height: 16),
         DietSummaryCard(userId: userId),
@@ -308,4 +315,229 @@ class _NutrientBox extends StatelessWidget {
 String _formatDay(DateTime date) {
   String two(int value) => value.toString().padLeft(2, '0');
   return '${date.year}-${two(date.month)}-${two(date.day)}';
+}
+
+/// Opens the weekly health-points leaderboard. Podium rivals are demo data;
+/// your own total is read live from Firestore and grows 10 per healthy swap.
+Future<void> showLeaderboardModal(BuildContext context, String userId) {
+  return showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (_) => _LeaderboardSheet(userId: userId),
+  );
+}
+
+class _LeaderboardEntry {
+  const _LeaderboardEntry(this.name, this.points);
+
+  final String name;
+  final int points;
+}
+
+/// Demo podium standings — deliberately far out of reach so the leaderboard
+/// rewards slow, steady swapping rather than a single scan.
+const _leaderboardEntries = [
+  _LeaderboardEntry('Amara', 480),
+  _LeaderboardEntry('Jonny', 410),
+  _LeaderboardEntry('Priya', 350),
+  _LeaderboardEntry('Sam', 300),
+];
+
+/// Your entry shows the real banked total; 0 until the first swap.
+const _LeaderboardEntry _you = _LeaderboardEntry('You', 0);
+
+class _LeaderboardSheet extends StatefulWidget {
+  const _LeaderboardSheet({required this.userId});
+
+  final String userId;
+
+  @override
+  State<_LeaderboardSheet> createState() => _LeaderboardSheetState();
+}
+
+class _LeaderboardSheetState extends State<_LeaderboardSheet> {
+  static const _podiumHeights = [96.0, 72.0, 56.0, 44.0, 36.0];
+  static const _medalColors = [
+    Color(0xFFFFD54F), // gold
+    Color(0xFFCFD8DC), // silver
+    Color(0xFFFFAB91), // bronze
+    Color(0xFFE0E0E0),
+    Color(0xFFE0E0E0),
+  ];
+  static const _medalIcons = [
+    Icons.emoji_events,
+    Icons.emoji_events,
+    Icons.emoji_events,
+    null,
+    null,
+  ];
+
+  /// Everything needed to render before the user's total arrives.
+  int? _yourPoints;
+  bool _loadingPoints = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPoints();
+  }
+
+  Future<void> _loadPoints() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.userId)
+          .get();
+      if (!mounted) return;
+      final points = doc.data()?['swapPoints'];
+      setState(() {
+        _yourPoints = points is num ? points.toInt() : 0;
+        _loadingPoints = false;
+      });
+    } on FirebaseException {
+      if (mounted) setState(() => _loadingPoints = false);
+    }
+  }
+
+  /// The five standings: the four demo rivals, then the user's live total
+  /// ranked by points. Podium spots (top 3) keep their block styling; rows 4
+  /// and 5 render as list tiles.
+  List<(_LeaderboardEntry, int)> get _standings {
+    final you = _LeaderboardEntry('You', _yourPoints ?? 0);
+    final all = [..._leaderboardEntries, you]
+      ..sort((a, b) => b.points.compareTo(a.points));
+    return [for (final (i, e) in all.indexed) (e, i + 1)];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final standings = _standings;
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Healthy swaps leaderboard',
+              style: theme.textTheme.titleLarge,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Earn 10 points each time you choose the healthier option.',
+              style: theme.textTheme.bodySmall,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                // Silver: 2nd place stands to the left.
+                _podiumColumn(context, standings[1]),
+                const SizedBox(width: 10),
+                // Gold: 1st place in the middle, tallest.
+                _podiumColumn(context, standings[0]),
+                const SizedBox(width: 10),
+                // Bronze: 3rd place to the right.
+                _podiumColumn(context, standings[2]),
+              ],
+            ),
+            if (_loadingPoints)
+              const Padding(
+                padding: EdgeInsets.all(12),
+                child: SizedBox(
+                  height: 20,
+                  width: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            const SizedBox(height: 16),
+            // Ranks 4 and 5 render as simple rows; with the demo podium far
+            // ahead, "You" normally sits here at 5th.
+            for (final (entry, rank) in standings.skip(3))
+              ListTile(
+                dense: true,
+                leading: CircleAvatar(
+                  radius: 14,
+                  backgroundColor: _medalColors[rank - 1],
+                  child: Text(
+                    '$rank',
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                title: Text(entry.name),
+                trailing: Text(
+                  '${entry.points} pts',
+                  style: theme.textTheme.titleSmall,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _podiumColumn(
+    BuildContext context,
+    (_LeaderboardEntry, int) standing,
+  ) {
+    final theme = Theme.of(context);
+    final (entry, rank) = standing;
+    final color = _medalColors[rank - 1];
+    final icon = _medalIcons[rank - 1];
+    final isYou = entry.name == 'You';
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        CircleAvatar(
+          radius: 18,
+          backgroundColor: isYou
+              ? theme.colorScheme.primaryContainer
+              : theme.colorScheme.secondaryContainer,
+          child: Text(
+            entry.name[0],
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(entry.name, style: theme.textTheme.bodyMedium),
+        Text(
+          '${entry.points} pts',
+          style: theme.textTheme.labelMedium?.copyWith(
+            color: theme.colorScheme.primary,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 6),
+        // The podium block itself, tall for gold, shorter for the rest.
+        Container(
+          width: 84,
+          height: _podiumHeights[rank - 1],
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+          ),
+          alignment: Alignment.topCenter,
+          padding: const EdgeInsets.only(top: 8),
+          child: icon == null
+              ? Text(
+                  '$rank',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                )
+              : Icon(icon, color: Colors.brown, size: 28),
+        ),
+      ],
+    );
+  }
 }
