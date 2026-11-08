@@ -15,6 +15,7 @@ class FoodRecommendation {
     required this.found,
     this.hasNews = false,
     this.hasGeneralInfo = false,
+    this.news,
     this.generalInfo,
     this.clashingConditions = const {},
     this.clashingPrefs = const {},
@@ -36,6 +37,9 @@ class FoodRecommendation {
 
   /// The food's [Food.generalInfo] is non-empty.
   final bool hasGeneralInfo;
+
+  /// Stored local news alert about this food, e.g. a recall.
+  final String? news;
 
   /// Stored explanation for why this food may be unhealthy.
   final String? generalInfo;
@@ -255,6 +259,7 @@ class FoodRecommendationService {
       found: true,
       hasNews: hasNews,
       hasGeneralInfo: hasGeneralInfo,
+      news: hasNews ? food.localNews : null,
       generalInfo: food.generalInfo,
       clashingConditions: clashingConditions,
       clashingPrefs: clashingPrefs,

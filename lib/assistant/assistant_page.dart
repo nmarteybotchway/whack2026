@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'assistant_controller.dart';
 import 'assistant_models.dart';
+import 'message_spans.dart';
 import 'assistant_settings_page.dart';
 
 /// Conversation surface intended to live inside the signed-in home shell.
@@ -139,7 +140,11 @@ class _AssistantPageState extends State<AssistantPage> {
                               ?.copyWith(fontWeight: FontWeight.w700),
                         ),
                         Text(
-                          c.listening
+                          c.busy
+                              ? 'Working on your answer…'
+                              : c.preparingSpeech
+                              ? 'Preparing voice…'
+                              : c.listening
                               ? 'Listening…'
                               : c.speaking
                               ? 'Speaking…'
@@ -331,22 +336,6 @@ class _MessageBubble extends StatelessWidget {
   final AssistantMessage message;
   final AssistantController controller;
 
-  /// Splits [text] into plain and bold spans, consuming `**bold**` markers.
-  /// Unpaired markers are left as literal text.
-  static List<TextSpan> _messageSpans(String text) {
-    final spans = <TextSpan>[];
-    var bold = false;
-    for (final part in text.split('**')) {
-      spans.add(
-        TextSpan(
-          text: part,
-          style: bold ? const TextStyle(fontWeight: FontWeight.w700) : null,
-        ),
-      );
-      bold = !bold;
-    }
-    return spans;
-  }
   @override
   Widget build(BuildContext context) {
     final mine = message.role == 'user';
@@ -370,7 +359,7 @@ class _MessageBubble extends StatelessWidget {
           children: [
             SelectableText.rich(
               TextSpan(
-                children: _messageSpans(message.text),
+                children: messageSpans(message.text),
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
             ),

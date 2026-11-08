@@ -6,31 +6,27 @@ verdict. The result is also handed to the shopping assistant.
 
 ## Shopping companion mode
 
-Tap **Start** in the panel over the camera to enable a foreground shopping
-session. This temporarily enables the existing FrameGate auto-capture even when
-the compile-time `scanMode` is `button`. New results appear in the panel and
-are summarized aloud using the saved voice settings; they do not automatically
-open the result sheet. **Details** opens that sheet on request.
+Tap **Start** in the panel over the camera to begin a foreground voice session.
+The camera preview stays live without sending frames or waiting for the camera to
+be still. Press the shutter to identify the item, or ask the companion about a
+specific item it cannot identify; it can request a fresh photo and continue the
+same conversation with the result. A requested photo does not open the result
+sheet. Say “show me more” or press **Details** to open the sheet.
 
-The microphone, editable transcript, Send, Stop speech and alternative image
-cards remain over the preview. Typed/general questions work before the first
-scan. The full conversation is still available from the app-bar chat button.
-There is no always-on listening. Automatic captures pause while briefing or
-answering, listening, speaking, reviewing a draft or confirming a write.
+Start speaks a greeting and listens automatically. Spoken questions are sent
+when recognized, and listening resumes after replies and product briefings. The
+microphone can be paused or resumed from the companion panel. Manual shutter
+scans outside the companion continue to open the original result sheet.
 
 The page owns `ShoppingCompanionController` and shares the signed-in shell's
 `AssistantController`. `ProductBriefingService` uses the existing personalized
-recommender and validates stored substitutes. Product identities and generation
-tokens suppress repeat announcements and discard stale product replies.
-Stopping, leaving, or backgrounding the session stops audio; the user explicitly
-starts it again on return. Normal button scanning still opens the original
-result sheet when companion mode is off.
+recommender and validates stored substitutes. Product identities suppress
+repeat announcements and generation tokens discard stale product replies.
+Stopping, leaving, or backgrounding the session stops audio and microphone use.
 
 | File | Role |
 | --- | --- |
-| `lib/scan/scan_page.dart` | `ScanPage`: camera lifecycle, frame streaming, capture, handoff to the assistant and result sheet |
-| `lib/scan/scan_config.dart` | `ScanMode` enum and the compile-time `scanMode` constant |
-| `lib/scan/frame_gate.dart` | `FrameGate`: decides when a live preview frame is worth sending (auto-capture) |
+| `lib/scan/scan_page.dart` | `ScanPage`: camera lifecycle, on-demand capture, handoff to the assistant and result sheet |
 | `lib/scan/camera_analysis.dart` | `CameraAnalysis`, `AnalysisResult`, legacy `AnalysedItem` |
 | `lib/scan/product_identification_service.dart` | `ProductIdentification` model, `ProductIdentificationProvider` interface, `ApiProductIdentification` (FoodBase backend) |
 | `lib/foodbase/foodbase_api.dart` | `identifyFoodProduct()`: the HTTP call to FoodBase |
@@ -97,60 +93,6 @@ screen. Nothing in `lib/` currently constructs a demo `ScanPage`.
 - The camera is released on `AppLifecycleState.inactive` (only once
   initialised, so the permission dialog does not break initialisation) and
   restarted on `resumed`.
-
-### `FrameGate` algorithm
-
-Each frame is shrunk to a 24×24 grid (`_grid = 24`), each cell the mean of
-3×3 samples (`_samplesPerCell = 3`). The grid's mean brightness is subtracted
-so auto-exposure changes do not register as motion. From the grid it computes:
-
-| Metric | Definition |
-| --- | --- |
-| `brightness` | mean luma of the frame (before mean subtraction) |
-| `contrast` | mean absolute deviation from the mean |
-| `motion` | mean abs difference from the previous grid, exponentially smoothed with `_motionSmoothing = 0.5` |
-| `detail` | mean abs horizontal + vertical gradient over the centre half of the grid (cells 6..17) |
-| `novelty` | mean abs difference from the last *sent* grid (255 if nothing sent yet) |
-
-Default thresholds (`FrameGate()` constructor; `ScanPage` uses the defaults):
-
-| Parameter | Default | Meaning |
-| --- | --- | --- |
-| `holdDuration` | 1 s | steady time needed before sending |
-| `cooldown` | 5 s | no sends for this long after a send / `startCooldown` |
-| `motionThreshold` | 6 | smoothed `motion` must be ≤ this to count as steady |
-| `detailThreshold` | 4 | `detail` must reach this to count as an item |
-| `noveltyThreshold` | 12 | `novelty` must reach this for a scene to count as new |
-| `minBrightness` | 25 | below this the frame is too dark to identify (`noItem`) |
-| `pocketBrightness` | 20 | below this the lens is covered (`inPocket`) |
-| `dimBrightness` | 50 | with `pocketContrast`, a dim featureless frame counts as covered |
-| `pocketContrast` | 2 | contrast below this while dimmer than `dimBrightness` → `inPocket` |
-
-`addFrame` evaluates in this order and returns the first match:
-
-1. No previous frame → `warmingUp`.
-2. `brightness < 20` or (`brightness < 50` and `contrast < 2`) → `inPocket`.
-3. If steady and `novelty ≥ 12`, set `_sceneChangedSinceSend = true` (this
-   happens even during cooldown, so the same item can be re-sent after it was
-   taken away).
-4. Less than `cooldown` since `_lastSentAt` → `coolingDown` (progress = fraction of cooldown elapsed).
-5. `motion > 6` → `moving`.
-6. `brightness < 25` or `detail < 4` → `noItem`.
-7. `_sceneChangedSinceSend == false` → `alreadySent`.
-8. Held for less than `holdDuration` → `holding` (progress = fraction of hold).
-9. Otherwise → `ready`: records the grid as `_lastSent`, sets `_lastSentAt`,
-   clears `_sceneChangedSinceSend`.
-
-Steps 2 and 4–7 also reset the hold timer. After every capture (success or
-failure) `ScanPage` calls `_gate.startCooldown(_clock.elapsed)`, so the 5 s
-cooldown runs from when the answer arrived, not from when the frame passed.
-
-The on-screen chip (`_GateIndicator`) maps states to text: `warmingUp`
-"Starting…", `inPocket` "Camera covered", `coolingDown` "Ready again
-shortly…", `moving` "Hold the camera steady", `noItem` "Show an item to the
-camera", `alreadySent` "Show another item", `holding`/`ready` "Hold still…",
-and "Identifying…" while busy. Raw metrics are shown in debug builds or demo
-mode.
 
 ## Identification request and response
 

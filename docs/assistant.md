@@ -22,18 +22,37 @@ resolved it to `z-ai/glm-5.3-flash` and returned a valid function call.
   history. Preferences are stored per signed-in user.
 - In Scan, tap **Start** on Shopping companion to keep the camera visible while
   hearing summaries, asking questions and seeing alternative image cards. The
-  app automatically captures a steady product while this mode is enabled.
-  Tap the microphone, review the transcript and send; general questions also
-  work before the first scan. Use **Details** for the original scan sheet or
+  camera stays on the live preview until you press the shutter or the assistant
+  requests a fresh photo to identify a product.
+  Start speaks a greeting and listens for questions automatically, returning
+  to listening after replies. The companion keeps listening during playback on supported Android devices
+  and interrupts when you speak.
+  General questions work before the first scan.
+  Say “show me more” or use **Details** for the original scan sheet or
   the app-bar chat button to open the full shared conversation.
 - Stop session, backgrounding, or an interruption stops camera companion audio
-  and microphone activity. Resume the companion explicitly. This version does
-  not continuously listen or operate in the background.
+  and microphone activity. Resume the companion explicitly. Automatic listening
+  runs only during the foreground shopping session.
+
+The Android duplex microphone filters low-level room noise before recognition,
+using platform noise suppression when available and an adaptive level gate.
+Brief impulses do not qualify for interruption; a short audio buffer preserves
+word beginnings, and a release interval preserves word endings. Recognition
+results must follow recent qualified microphone activity. This is a level
+filter, so loud nearby conversations can still be recognized.
 
 ## Camera shopping companion
 
 `ShoppingCompanionController` coordinates the existing `AssistantController`
-without creating a second chat session or speech engine. New scans update the
+without creating a second chat session. Live Android speech uses
+`LiveVoiceService` and `LiveVoiceBridge`, backed by an installed local system
+voice; ordinary assistant speech can still use Kokoro. The live voice reports
+native playback start/completion, has a five-second startup watchdog, and
+keeps the selected Bluetooth/headset route or uses the phone speaker.
+The panel prioritizes answering, preparing voice, and speaking over the
+always-open microphone indicator, and shows a Retry speech action on failure.
+
+New scans update the
 selected product, invalidate unfinished product-specific model turns, and stop
 old speech. Prior conversation stays available. Product identity uses a GTIN,
 catalog ID, or normalized name/brand/variant/size. Repeat announcements are

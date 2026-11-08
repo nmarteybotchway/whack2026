@@ -15,6 +15,20 @@ abstract class TextToSpeechService {
   /// ignored.
   Future<void> speak(String text, {String? locale}) async {}
 
+  Future<void> prepare() async {}
+
+  /// Reports when audio playback begins, after any voice preparation.
+  Future<void> speakWithProgress(
+    String text, {
+    String? locale,
+    required void Function() onPlaybackStarted,
+  }) async {
+    onPlaybackStarted();
+    await speak(text, locale: locale);
+  }
+
+  void setConversationMode(bool enabled) {}
+
   Future<List<Map<String, String>>> getVoices() async => const [];
 
   Future<void> setVoice(String name, String locale) async {}
@@ -54,6 +68,21 @@ class PlatformTextToSpeechService extends TextToSpeechService {
     await _configure();
     if (locale != null) await _engine.setLanguage(locale);
     await _engine.speak(normalizedText);
+  }
+
+  @override
+  Future<void> speakWithProgress(
+    String text, {
+    String? locale,
+    required void Function() onPlaybackStarted,
+  }) async {
+    await _configure();
+    _engine.setStartHandler(onPlaybackStarted);
+    try {
+      await speak(text, locale: locale);
+    } finally {
+      _engine.setStartHandler(() {});
+    }
   }
 
   @override

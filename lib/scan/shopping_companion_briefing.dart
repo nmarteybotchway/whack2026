@@ -15,12 +15,18 @@ class ProductBriefing {
     required this.name,
     required this.text,
     this.alternatives = const [],
+    this.facts = const {},
   });
 
   final String key;
   final String name;
+
+  /// Deterministic fallback wording, spoken only when the model is unavailable.
   final String text;
   final List<CompanionAlternative> alternatives;
+
+  /// JSON-safe personal assessment the assistant phrases its reply from.
+  final Map<String, Object?> facts;
 }
 
 /// A substitute that passed the stored recommendation checks.
@@ -90,6 +96,7 @@ class ProductBriefingService {
         key: key,
         name: name,
         text: 'I could not identify this product clearly. I can’t assess its suitability from the scan.',
+        facts: {'product': name, 'verdict': 'unidentified'},
       );
     }
 
@@ -108,6 +115,7 @@ class ProductBriefingService {
         name: name,
         text:
             'I could not load the stored food and profile data for $name. I can’t assess its suitability right now.',
+        facts: {'product': name, 'verdict': 'unavailable'},
       );
     }
     if (!recommendation.found) {
@@ -116,6 +124,7 @@ class ProductBriefingService {
         name: name,
         text:
             'I could not match $name to the food catalog. I can’t assess its suitability from the available data.',
+        facts: {'product': name, 'verdict': 'not_in_catalog'},
       );
     }
 
@@ -171,7 +180,65 @@ class ProductBriefingService {
       name: name,
       text: text,
       alternatives: alternatives,
+      facts: _facts(
+        name: name,
+        product: product,
+        recommendation: recommendation,
+        alternatives: alternatives,
+        unknownConstraints: unknownConstraints,
+      ),
     );
+  }
+
+  static Map<String, Object?> _facts({
+    required String name,
+    required ProductIdentification product,
+    required FoodRecommendation recommendation,
+    required List<CompanionAlternative> alternatives,
+    required List<String> unknownConstraints,
+  }) {
+    final profile = recommendation.profile;
+    final info = recommendation.generalInfo?.trim() ?? '';
+    final news = recommendation.news?.trim() ?? '';
+    return {
+      'product': name,
+      'matchedFood': recommendation.food,
+      'identificationCertain': product.status == 'identified',
+      'verdict': recommendation.shouldAvoid ? 'avoid' : 'good',
+      'reasonsToAvoid': {
+        if (news.isNotEmpty) 'foodAlert': news,
+        if (recommendation.hasGeneralInfo && info.isNotEmpty)
+          'healthNote': info,
+        if (recommendation.clashingPrefs.isNotEmpty)
+          'conflictsWithUserPreferences': [
+            for (final v in recommendation.clashingPrefs) v.label,
+          ],
+        if (recommendation.clashingConditions.isNotEmpty)
+          'conflictsWithUserHealthConditions': [
+            for (final v in recommendation.clashingConditions) v.label,
+          ],
+        if (recommendation.excessNutrients.isNotEmpty)
+          'highInNutrientsUserIsAlreadyOver': [
+            for (final v in recommendation.excessNutrients) v.label,
+          ],
+      },
+      if (recommendation.boostsNutrients.isNotEmpty)
+        'richInNutrientsUserIsLowOn': [
+          for (final v in recommendation.boostsNutrients) v.label,
+        ],
+      'user': {
+        'preferences': [for (final v in profile.prefs) v.label],
+        'healthConditions': [for (final v in profile.conditions) v.label],
+        'lowNutrients': [for (final v in profile.lowNutrients) v.label],
+        'overNutrients': [for (final v in profile.highNutrients) v.label],
+        if (unknownConstraints.isNotEmpty)
+          'unassessedConstraints': unknownConstraints,
+      },
+      if (recommendation.swapDeclined) 'userDeclinedSwapsForThisFood': true,
+      'verifiedAlternatives': [
+        for (final a in alternatives) {'name': a.name, 'why': a.detail},
+      ],
+    };
   }
 
   static String _lookupName(ProductIdentification product) {
