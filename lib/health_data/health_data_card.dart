@@ -44,7 +44,7 @@ class _HealthDataCardState extends State<HealthDataCard> {
       if (!mounted) return;
       setState(() {
         _snapshot = doc.data();
-        _enabled = doc.get('optedIn') as bool? ?? false;
+        _enabled = doc.data()?['optedIn'] as bool? ?? false;
       });
     } on FirebaseException {
       if (!mounted) return;

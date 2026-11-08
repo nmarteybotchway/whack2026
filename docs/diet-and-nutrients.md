@@ -4,8 +4,8 @@ Receipts are photographed, turned into food names, stored per day under the
 user, enriched with vitamins and minerals from USDA FoodData Central, and kept
 for a sliding two-week window. The window, together with foods logged through
 the assistant, feeds the nutrient tracker, the home-screen garden, and the
-scan recommender. A separate nutrient garden on the home page shows three Rive
-trees.
+scan recommender. A separate nutrient garden fills the home page with a painted
+sunrise valley.
 
 | File | Role |
 | --- | --- |
@@ -20,7 +20,8 @@ trees.
 | `lib/diet/nutrient_tracker_page.dart` | `NutrientTrackerPage` (opened from the History tab) |
 | `lib/diet/diet_history_page.dart` | `DietHistoryPage`: receipt days and manual food logs |
 | `lib/food/nutrient.dart` | `Nutrient` enum: shorthand ids, units, reference amounts |
-| `lib/garden/nutrient_garden.dart` | `NutrientGarden`: three Rive trees |
+| `lib/garden/nutrient_garden.dart` | `NutrientGarden`: loads the score, shows the valley |
+| `lib/garden/sunrise_valley.dart` | `SunriseValley`: the `CustomPainter` scene |
 | `lib/garden/nutrient_score_service.dart` | `NutrientScoreService`: 0..1 score from `NutrientInsights` |
 
 ## Data flow
@@ -326,22 +327,43 @@ footnote.
 scan counter in `_HomePageState`, so it reloads after the scan page closes).
 It loads `NutrientInsights.load(userId)` (injectable `loader`), scores it with
 `NutrientScoreService.scoreFromInsights`, and animates the trees to the new
-score over 800 ms with a `TweenAnimationBuilder`.
+score over 800 ms with a `TweenAnimationBuilder`. It expands to fill its
+parent; the home tab stacks it under the greeting and the `Scaffold`
+extends the body behind the status bar and bottom bar.
 
 | State | Shown |
 | --- | --- |
-| Loading | Trees at 0 (same 180 px height) |
-| Error | Logged with `debugPrint`; trees stay at 0 |
-| `insights.isEmpty` | Trees at 0 plus "Scan a receipt to grow your garden" |
-| Otherwise | Trees at the score |
+| Loading | Valley at 0 |
+| Error | Logged with `debugPrint`; valley stays at 0 |
+| `insights.isEmpty` | Valley at 0 plus "Scan a receipt to grow your garden" above the bottom bar |
+| Otherwise | Valley at the score |
 
-The trees come from `assets/rive/tree_demo.riv` (package `rive`), three in a
-row with scales 0.55 (left), 1.0 (centre), 0.75 (right). Each `_Tree` creates
-its `RiveWidgetController` (`StateMachineNamed('State Machine 1')`) once,
-finds the first `NumberInput` once, sets it to
-`progress.clamp(0, 1) * 80 * scale` on every progress change, and disposes
-both in `dispose`. A perfect score reaches 80 % of the input's 0–100 range on
-the centre tree. Tests replace the Rive trees through `treesBuilder`.
+The default scene maps the score onto `SunriseValley`'s top 30 %
+(`_minLushness` 0.7), so the home screen is never bare: a score of 0 shows a
+well-grown valley and a perfect score the fullest one. "Valley at 0" above
+means that floor.
+
+`SunriseValley(progress:)` is a single `CustomPainter`: sky, sun and moon,
+stars, clouds and birds, layered ridges with mist bands, a meadow, and an
+S-curve river that widens toward the viewer. `progress` drives how many trees
+and tufts appear, how big they grow and how saturated the greens are, from
+sparse saplings at 0 to a full valley at 1. Layout positions are seeded, so
+the scene is the same on every build. Tests replace it through
+`treesBuilder`.
+
+It animates from a `Ticker` that feeds a `ValueNotifier<double>` of scene
+seconds straight to the painter (`CustomPainter(repaint:)`), so frames
+repaint without rebuilding widgets. `ValleyClock` turns those seconds into:
+
+| Cycle | Length | What changes |
+| --- | --- | --- |
+| Day/night | `dayLength` 48 s, 65 % daylight | Sun arcs left to right; sky keyed by sun height (night, twilight, golden, morning, noon); moon and twinkling stars at night; land lit through one `ColorFilter` (`BlendMode.modulate`) tint |
+| Seasons | `daysPerSeason` 1 day/night cycle each | Spring blossom and petals, summer greens, autumn amber and falling leaves, winter snow, frosted trees and snowfall; each blends into the next overnight, so every sunrise opens on the next season |
+| Ambient | continuous | Clouds drift and wrap; birds fly by day; a plane crosses every 75 s (contrail by day, navigation lights at night); two gondolas pass on a cable car up the middle ridge; a hot air balloon drifts across every 2 min (its burner glows at night); a tractor works the meadow, drawn in depth order among the trees, with a headlight beam after dark; trees, crest conifers and grass sway in gusting wind; light streaks flow down the river under the reflected sun or moon |
+
+The scene opens just after sunrise in today's season (`ValleySeason.of`,
+northern hemisphere), or `startSeason`. `animate: false`, or the platform's
+reduced-motion setting (`MediaQuery.disableAnimationsOf`), freezes it.
 
 ### `NutrientScoreService`
 
@@ -367,6 +389,7 @@ the tracker never disagree.
 | `test/diet/receipt_store_test.dart` | `ReceiptStore.dayWrite` increments each nutrient so same-day receipts add up; leaves `nutrition` out when there is nothing to add |
 | `test/diet/receipt_parser_test.dart` | price-only lines, single-line name+price, skip lines, skip keywords mid-name, quantity prefix, comma decimals/currency, unpaired names, `toMap`/`fromMap`, tax flag, glued price, qty-at-unit-price |
 | `test/garden/nutrient_score_service_test.dart` | empty insights score 0; all targets met score 1; half goals; sodium at, over and far over the limit; megadose clamping; `scoreFor` uses the injected loader |
+| `test/garden/sunrise_valley_test.dart` | month to season; each season opens just after sunrise; noon/midnight sun height; a season holds through the day then turns overnight; winter wraps to spring; a full year of frames paints without errors; reduced motion stops the ticker |
 | `test/garden/nutrient_garden_test.dart` | trees at 0 while loading; empty-diet hint; error falls back to 0; a non-empty diet grows to the expected score (fake loader and `treesBuilder`) |
 | `test/diet/veryfi_service_test.dart` | line-item mapping, total-only items, multi-line descriptions from a real Veryfi response, signed headers and base64 body, `VeryfiException` on non-200 (uses `MockClient`) |
 

@@ -53,7 +53,7 @@ a centre scan button:
 
 | Index | Tab | Body widget |
 | --- | --- | --- |
-| 0 | Home | `_HomeTab`: greeting, `NutrientGarden(userId:)` (score from `NutrientScoreService`; reloads after a scan) |
+| 0 | Home | `_HomeTab`: full-screen `NutrientGarden(userId:)` with the greeting overlaid; no app bar (score from `NutrientScoreService`; reloads after a scan) |
 | 1 | History | `DietHistoryPage` (`lib/diet/diet_history_page.dart`) |
 | — | Scan FAB | pushes `ScanPage(userId:, assistant:)` (`lib/scan/scan_page.dart`) |
 | 2 | Assistant | `AssistantPage(controller:)` (`lib/assistant/assistant_page.dart`) |
@@ -101,7 +101,7 @@ the card. See [health-data.md](health-data.md#known-gaps).
 | `lib/food/` | Shared food model, Firestore access, matching and recommendations | `Food`, `FoodRepository`, `FoodRecommendationService`, `FoodRecommendation`, `UserProfile`, `HealthCondition`, `Preference`, `Nutrient`, `food_matcher.dart`, generated `known_foods.g.dart` (`KnownFood`) |
 | `lib/food_news/`, `lib/food_news.dart` | Local-news / general-info lookup on a `food` doc | `FoodNewsService`, `FoodNewsResult` |
 | `lib/diet/` | Receipts (Veryfi with ML Kit fallback), 14-day diet window, USDA nutrition, nutrient insights | `ReceiptScanPage`, `VeryfiService`, `receipt_parser.dart`, `ReceiptReviewSheet`, `ReceiptStore`, `DietWindowService`/`DietStorage`, `NutritionService`, `NutrientInsights`, `NutrientTrackerPage`, `NutrientGapsCard`, `DietHistoryPage` |
-| `lib/garden/` | Rive "nutrient garden" on the home tab | `NutrientGarden` (loads `assets/rive/tree_demo.riv`), `NutrientScoreService` (0..1 score from `NutrientInsights`) |
+| `lib/garden/` | "Nutrient garden" backdrop of the home tab | `NutrientGarden`, `SunriseValley` (`CustomPainter` scene), `NutrientScoreService` (0..1 score from `NutrientInsights`) |
 | `lib/assistant/` | Chat/voice assistant with tool calls and confirm-before-write actions | `AssistantController`, `FirestoreAssistantRepository` (`AssistantDataSource`), `AssistantSettings`, `AssistantAction`, `AssistantPage`, `AssistantSettingsPage` |
 | `lib/services/` | Thin wrappers over platform speech | `SpeechToTextService` (`speech_to_text`), `TextToSpeechService` (`flutter_tts`) |
 | `lib/openrouter/`, `lib/openrouter.dart` | OpenRouter chat-completions client (text, image, JSON schema, optional web search) | `OpenRouterService`, `OpenRouterImage`, `OpenRouterException` |

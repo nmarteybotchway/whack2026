@@ -98,6 +98,25 @@ expect("preference update preserves existing extra profile fields", 200,
 expect("profile update cannot introduce arbitrary fields", 403,
        commit([write(profile, {"dietary": [], "displayName": "Alice", "admin": True}, "updatedAt")]))
 
+def partial_write(path, fields, timestamp=None):
+    result = write(path, fields, timestamp)
+    result["updateMask"] = {"fieldPaths": list(fields)}
+    return result
+
+
+expect("swap choice can update without replacing profile timestamp", 200,
+       commit([partial_write(profile, {"ignored_swap_items": ["bacon"]})]))
+expect("other user cannot change swap choices", 403,
+       commit([partial_write(profile, {"ignored_swap_items": []})], uid="bob"))
+expect("invalid swap choice type rejected", 403,
+       commit([partial_write(profile, {"ignored_swap_items": "bacon"})]))
+expect("garden score updates preserve profile and unrelated timestamp", 200,
+       commit([partial_write(profile, {"nutrientScore": 0.5, "nutrientTotals": {"CA": 350}}, "nutrientUpdatedAt")]))
+expect("out-of-range garden score rejected", 403,
+       commit([partial_write(profile, {"nutrientScore": 1.5})]))
+expect("other user cannot change garden score", 403,
+       commit([partial_write(profile, {"nutrientScore": 0.2})], uid="bob"))
+
 settings = {"schemaVersion": 1, "name": "Guide", "tone": "Calm guide",
             "answerLength": "short", "supportive": True, "humor": False,
             "instructions": "Be practical", "voiceEnabled": False,

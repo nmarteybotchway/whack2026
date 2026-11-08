@@ -174,12 +174,17 @@ class DietWindowService {
   static DateTime cutoffFor(DateTime now) =>
       DateTime(now.year, now.month, now.day - window.inDays);
 
-  /// Live stream of the window, newest first. Emits the refreshed window
-  /// immediately on listen, then again whenever [save] or [deleteDay]
+  /// Live stream of the window, newest first. Broadcast, so a widget that is
+  /// remounted (or several widgets) can listen again without a
+  /// "Stream has already been listened to" state error. Emits the refreshed
+  /// window immediately on listen, then again whenever [save] or [deleteDay]
   /// change it, and at least every hour so day rollover and pruning are
   /// picked up while the page stays open. Each event is a full refresh that
   /// prunes expired days from storage and the mirror.
-  Stream<List<DietDay>> recentDaysStream() async* {
+  Stream<List<DietDay>> recentDaysStream() =>
+      _recentDaysGenerator().asBroadcastStream();
+
+  Stream<List<DietDay>> _recentDaysGenerator() async* {
     var seenVersion = -1;
     var lastRefresh = _now();
     while (true) {

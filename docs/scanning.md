@@ -4,6 +4,28 @@ The camera product scan photographs a packaged food, identifies it, and shows a
 bottom sheet with the product details, any food news, and a personal buy/avoid
 verdict. The result is also handed to the shopping assistant.
 
+## Shopping companion mode
+
+Tap **Start** in the panel over the camera to enable a foreground shopping
+session. This temporarily enables the existing FrameGate auto-capture even when
+the compile-time `scanMode` is `button`. New results appear in the panel and
+are summarized aloud using the saved voice settings; they do not automatically
+open the result sheet. **Details** opens that sheet on request.
+
+The microphone, editable transcript, Send, Stop speech and alternative image
+cards remain over the preview. Typed/general questions work before the first
+scan. The full conversation is still available from the app-bar chat button.
+There is no always-on listening. Automatic captures pause while briefing or
+answering, listening, speaking, reviewing a draft or confirming a write.
+
+The page owns `ShoppingCompanionController` and shares the signed-in shell's
+`AssistantController`. `ProductBriefingService` uses the existing personalized
+recommender and validates stored substitutes. Product identities and generation
+tokens suppress repeat announcements and discard stale product replies.
+Stopping, leaving, or backgrounding the session stops audio; the user explicitly
+starts it again on return. Normal button scanning still opens the original
+result sheet when companion mode is off.
+
 | File | Role |
 | --- | --- |
 | `lib/scan/scan_page.dart` | `ScanPage`: camera lifecycle, frame streaming, capture, handoff to the assistant and result sheet |

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -10,6 +12,9 @@ import 'analysis_result_sheet.dart';
 import 'camera_analysis.dart';
 import 'frame_gate.dart';
 import 'scan_config.dart';
+import 'shopping_companion_briefing.dart';
+import 'shopping_companion_controller.dart';
+import 'shopping_companion_overlay.dart';
 
 /// Full-screen camera page for photographing and identifying packaged items.
 ///
@@ -41,6 +46,13 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
   CameraController? _controller;
   CameraAnalysis? _analysis;
   String? _error;
+  ShoppingCompanionController? _companion;
+  AnalysisResult? _lastResult;
+  DateTime? _lastScanAt;
+  bool _companionWasActive = false;
+  bool _showingDetails = false;
+  int _foregroundEpoch = 0;
+  Future<void> _streamSync = Future<void>.value();
 
   /// True while a still photo is being analysed.
   bool _analysing = false;
@@ -59,24 +71,59 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
   bool _flashing = false;
   int _demoCaptures = 0;
 
-  bool get _streaming => widget.demo || scanMode == ScanMode.stream;
+  bool get _streaming =>
+      widget.demo ||
+      scanMode == ScanMode.stream ||
+      (_companion?.active ?? false);
+
+  bool get _interactionBusy {
+    final companion = _companion;
+    return companion != null &&
+        companion.active &&
+        (companion.listening ||
+            companion.committing ||
+            companion.pendingAction != null);
+  }
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    final assistant = widget.assistant;
+    final userId = widget.userId;
+    if (assistant != null && userId != null && !widget.demo) {
+      final briefings = ProductBriefingService(userId: userId);
+      _companion = ShoppingCompanionController(
+        assistant: assistant,
+        briefingLoader: briefings.describe,
+      )..addListener(_onCompanionChanged);
+    }
     if (ScanPage.isSupported) _startCamera();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _companion?.removeListener(_onCompanionChanged);
+    _companion?.dispose();
+    widget.assistant?.suspend();
     _stopCamera();
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    final interrupted =
+        state == AppLifecycleState.inactive &&
+        !(widget.assistant?.requestingMicrophonePermission ?? false);
+    if (interrupted ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      _foregroundEpoch++;
+      _companion?.pause();
+      widget.assistant?.suspend();
+    }
     // The camera must be released when the app goes to the background. Skip
     // this while the camera is still starting: the permission dialog also
     // makes the app inactive, and disposing mid-initialise breaks the plugin.
@@ -87,6 +134,36 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
     } else if (state == AppLifecycleState.resumed && _controller == null) {
       _startCamera();
     }
+  }
+
+  void _onCompanionChanged() {
+    if (!mounted) return;
+    final active = _companion?.active ?? false;
+    if (active != _companionWasActive) {
+      _companionWasActive = active;
+      _gate.reset();
+      _streamSync = _streamSync.then((_) async {
+        if (!mounted) return;
+        try {
+          if (_streaming && !_analysing && !_showingDetails) {
+            await _startStream();
+          } else {
+            await _stopStream();
+          }
+        } on CameraException {
+          // Manual capture remains available if preview streaming cannot start.
+        }
+      });
+      if (active && _lastResult?.identification != null) {
+        unawaited(
+          _companion!.updateProduct(
+            _lastResult!.identification,
+            scannedAt: _lastScanAt,
+          ),
+        );
+      }
+    }
+    setState(() {});
   }
 
   Future<void> _startCamera() async {
@@ -149,7 +226,19 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
   }
 
   void _onFrame(CameraImage frame) {
-    if (_analysing) return;
+    final companion = _companion;
+    if (_analysing ||
+        _showingDetails ||
+        (companion != null &&
+            companion.active &&
+            (companion.loading ||
+                companion.busy ||
+                companion.listening ||
+                companion.speaking ||
+                companion.draft.trim().isNotEmpty ||
+                companion.pendingAction != null))) {
+      return;
+    }
     final now = _clock.elapsed;
     if (now - _lastFrameAt < _frameInterval) return;
     _lastFrameAt = now;
@@ -185,13 +274,25 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
     if (widget.demo) return _flash();
     final controller = _controller;
     final analysis = _analysis;
-    if (controller == null || analysis == null || _analysing) return;
+    if (controller == null ||
+        analysis == null ||
+        _analysing ||
+        _showingDetails ||
+        _interactionBusy) {
+      return;
+    }
+    _analysing = true;
+    final scannedAt = DateTime.now().toUtc();
+    setState(() {});
+    await _companion?.scanning();
+    if (!mounted || _controller != controller) {
+      _analysing = false;
+      return;
+    }
     widget.assistant?.setCurrentProduct({
       'status': 'scanning',
       'scannedAt': DateTime.now().toUtc().toIso8601String(),
     });
-    _analysing = true;
-    setState(() {});
     AnalysisResult result;
     try {
       // Android cannot take a picture while streaming preview frames.
@@ -210,11 +311,13 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
       if (mounted) setState(() {});
     }
 
-    if (mounted) {
+    if (mounted && _controller == controller) {
+      _lastResult = result;
+      _lastScanAt = scannedAt;
       final product = result.identification;
       widget.assistant?.setCurrentProduct({
         'status': product?.status ?? 'unavailable',
-        'scannedAt': DateTime.now().toUtc().toIso8601String(),
+        'scannedAt': scannedAt.toIso8601String(),
         if (product != null) ...{
           'name': product.displayName,
           'productName': product.productName,
@@ -229,22 +332,59 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
         },
         if (result.error != null) 'error': result.error,
       });
-      await showAnalysisResult(
-        context,
-        result,
-        newsService: FoodNewsService(),
-        recommendationService: widget.userId == null
-            ? null
-            : FoodRecommendationService(),
-        userId: widget.userId,
-      );
+      if (_companion?.active ?? false) {
+        unawaited(_companion!.updateProduct(product, scannedAt: scannedAt));
+      } else {
+        if (await _showResult(result)) return;
+      }
     }
     if (mounted && _controller == controller) await _startStream();
+  }
+
+  Future<bool> _showResult(AnalysisResult result) async {
+    final tab = await showAnalysisResult(
+      context,
+      result,
+      newsService: FoodNewsService(),
+      recommendationService: widget.userId == null
+          ? null
+          : FoodRecommendationService(),
+      userId: widget.userId,
+      assistant: widget.assistant,
+    );
+    if (tab != null && mounted) {
+      Navigator.of(context).pop(tab);
+      return true;
+    }
+    return false;
+  }
+
+  Future<void> _showDetails() async {
+    final result = _lastResult;
+    if (result == null || _showingDetails || _analysing) return;
+    final wasActive = _companion?.active ?? false;
+    final foregroundEpoch = _foregroundEpoch;
+    _showingDetails = true;
+    await _companion?.pause();
+    await _streamSync;
+    await _stopStream();
+    if (!mounted) return;
+    final leaving = await _showResult(result);
+    _showingDetails = false;
+    if (!mounted || leaving) return;
+    if (wasActive &&
+        foregroundEpoch == _foregroundEpoch &&
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+      await _companion?.start();
+    }
+    if (mounted && _streaming) await _startStream();
   }
 
   Future<void> _openAssistant() async {
     final assistant = widget.assistant;
     if (assistant == null || _analysing) return;
+    await _companion?.pause();
+    await _streamSync;
     await _stopStream();
     await assistant.initialize();
     if (!mounted) return;
@@ -282,7 +422,7 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
         actions: [
           if (widget.assistant != null)
             IconButton(
-              tooltip: 'Ask about this product',
+              tooltip: 'Open full conversation',
               onPressed: _analysing ? null : _openAssistant,
               icon: const Icon(Icons.chat_bubble_outline),
             ),
@@ -303,40 +443,69 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
       return const Center(child: CircularProgressIndicator());
     }
 
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Center(child: CameraPreview(controller)),
-        IgnorePointer(
-          child: AnimatedOpacity(
-            opacity: _flashing ? 0.6 : 0,
-            duration: const Duration(milliseconds: 120),
-            child: const ColoredBox(color: Colors.red),
-          ),
-        ),
-        if (_streaming)
-          Positioned(
-            left: 16,
-            right: 16,
-            top: 16,
-            child: Center(
-              child: _GateIndicator(
-                status: _gateStatus,
-                busy: _analysing,
-                showMetrics: kDebugMode || widget.demo,
-                captures: widget.demo ? _demoCaptures : null,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
+        final panelHeight = keyboardOpen
+            ? (constraints.maxHeight - 24).clamp(0.0, constraints.maxHeight)
+            : (constraints.maxHeight - 132).clamp(
+                0.0,
+                constraints.maxHeight * .60,
+              );
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            Center(child: CameraPreview(controller)),
+            IgnorePointer(
+              child: AnimatedOpacity(
+                opacity: _flashing ? 0.6 : 0,
+                duration: const Duration(milliseconds: 120),
+                child: const ColoredBox(color: Colors.red),
               ),
             ),
-          ),
-        Positioned(
-          left: 0,
-          right: 0,
-          bottom: 32,
-          child: Center(
-            child: _CaptureButton(busy: _analysing, onPressed: _capture),
-          ),
-        ),
-      ],
+            if (_streaming)
+              Positioned(
+                left: 16,
+                right: 16,
+                top: 16,
+                child: Center(
+                  child: _GateIndicator(
+                    status: _gateStatus,
+                    busy: _analysing,
+                    showMetrics: kDebugMode || widget.demo,
+                    captures: widget.demo ? _demoCaptures : null,
+                  ),
+                ),
+              ),
+            if (_companion case final companion?)
+              Positioned(
+                left: 12,
+                right: 12,
+                bottom: keyboardOpen ? 12 : 120,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: panelHeight),
+                  child: ShoppingCompanionOverlay(
+                    controller: companion,
+                    scanning: _analysing,
+                    onShowDetails: _lastResult == null ? null : _showDetails,
+                  ),
+                ),
+              ),
+            if (!keyboardOpen)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 32,
+                child: Center(
+                  child: _CaptureButton(
+                    busy: _analysing || _interactionBusy,
+                    onPressed: _capture,
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }
